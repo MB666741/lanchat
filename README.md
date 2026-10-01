@@ -70,7 +70,7 @@ python tests/test_rekey.py             # 密钥轮换 40 条消息 + 传输中�
 
 ## 许可
 
-[MIT](LICENSE) —— 随便用，出事别找我。
+[MIT](LICENSE) 
 
 ---
 
