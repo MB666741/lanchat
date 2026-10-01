@@ -25,7 +25,8 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 
 **方式一：使用预编译包（2.2.0，无多语言）**
 
-1. 在 [Releases](../../releases) 页面下载 `LanChat-2.2.0-win64.zip`。
+1. 在 [Releases](../../releases) 页面下载 `LanChat-2.2.0-windows-amd64.zip`
+   （约 13.7 MB）。
    > 中国用户如果下载过慢，可以使用 [GitHub 加速](https://gh-proxy.com/)。
 2. 将压缩包**完整解压**到任意目录。程序以文件夹形式分发，`LanChat.exe` 依赖同级目录下的
    `_internal\`，请勿单独复制可执行文件。
