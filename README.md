@@ -87,4 +87,4 @@ pyinstaller lanchat.spec --noconfirm   # 自己打包 → dist\LanChat\
 
 ## 许可
 
-[MIT](LICENSE) —— 随便用，出事别找我。
+[MIT](LICENSE) 
