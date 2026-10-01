@@ -1,1 +1,26 @@
-# LanChat
+# ---- 构建产物 / 本地环境（不进仓库）----
+build/
+dist/
+packaging_env/
+*.spec.bak
+
+# ---- 运行时数据：身份私钥和聊天数据，绝对不要提交 ----
+.lanchat/
+lanchat_downloads/
+*.log
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 临时/本地杂项 ----
+.tmp-*
+*.tmp
+~$*
+载入的对话摘要.md
+README - 副本.md
+.pytest_cache/
+.mypy_cache/
