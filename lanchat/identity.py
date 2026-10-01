@@ -12,6 +12,7 @@ peer_id 由 Ed25519 公钥直接推导, 所以 **peer_id 本身不可伪造**;
 
 from __future__ import annotations
 
+from .i18n import t
 import base64
 import hashlib
 import json
@@ -111,23 +112,23 @@ class IdentityCard:
             ed_raw = b64d(self.ed_pub)
             sig = b64d(self.signature)
         except Exception as exc:  # noqa: BLE001
-            raise ValueError(f"身份卡编码非法: {exc}") from exc
+            raise ValueError(t("身份卡编码非法: {0}").format(exc)) from exc
         if len(ed_raw) != _KEY_BYTES:
-            raise ValueError("身份卡公钥长度非法")
+            raise ValueError(t("身份卡公钥长度非法"))
         if derive_peer_id(ed_raw) != self.peer_id:
-            raise ValueError("身份卡 peer_id 与公钥不匹配 (身份被伪造)")
+            raise ValueError(t("身份卡 peer_id 与公钥不匹配 (身份被伪造)"))
         payload = json.dumps(self.payload(), ensure_ascii=False, sort_keys=True,
                              separators=(",", ":")).encode("utf-8")
         try:
             Ed25519PublicKey.from_public_bytes(ed_raw).verify(sig, payload)
         except InvalidSignature as exc:
-            raise ValueError("身份卡签名无效") from exc
+            raise ValueError(t("身份卡签名无效")) from exc
         try:
             x_raw = b64d(self.x_pub)
         except Exception as exc:  # noqa: BLE001
-            raise ValueError(f"X25519 公钥非法: {exc}") from exc
+            raise ValueError(t("X25519 公钥非法: {0}").format(exc)) from exc
         if len(x_raw) != _KEY_BYTES:
-            raise ValueError("X25519 公钥长度非法")
+            raise ValueError(t("X25519 公钥长度非法"))
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +177,7 @@ class LocalIdentity:
                     x_priv=x_priv,
                 )
                 if identity.peer_id != derive_peer_id(ed_raw):
-                    raise ValueError("身份文件与公钥不匹配")
+                    raise ValueError(t("身份文件与公钥不匹配"))
                 return identity, False
             except Exception:  # noqa: BLE001 - 损坏就重建, 不让程序起不来
                 backup = path + f".broken-{int(time.time())}"
@@ -308,13 +309,13 @@ def resolve_app_dir(preferred: Optional[str] = None) -> str:
                 errors.append(f"{path}: {exc}")
                 continue
             if errors:
-                _DIR_CACHE["warning"] = f"首选数据目录不可用 ({errors[0]}), 已改用: {path}"
+                _DIR_CACHE["warning"] = t("首选数据目录不可用 ({0}), 已改用: {1}").format(errors[0], path)
             else:
                 _DIR_CACHE["warning"] = ""
             _DIR_CACHE["path"] = path
             return path
         # 全部失败: 返回首选路径, 后续读写会各自报错
-        _DIR_CACHE["warning"] = "找不到可写的数据目录: " + "; ".join(errors)
+        _DIR_CACHE["warning"] = t("找不到可写的数据目录: ") + "; ".join(errors)
         return candidates[0]
 
 
@@ -326,4 +327,4 @@ def local_hostname() -> str:
     try:
         return socket.gethostname()
     except OSError:
-        return "未知主机"
+        return t("未知主机")

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from .i18n import t
 import hashlib
 import os
 import queue
@@ -189,7 +190,8 @@ class Connection:
                                            name=f"hb-{self.peer_name}", daemon=True)
         self._heartbeat.start()
 
-    def close(self, reason: str = "主动断开") -> None:
+    def close(self, reason: str = "") -> None:
+        reason = reason or t("主动断开")
         if self._closed.is_set():
             return
         self._close_reason = reason
@@ -268,10 +270,10 @@ class Connection:
                     self._send_queue.put(frame, timeout=5.0)
             return True
         except queue.Full:
-            self.close("发送队列拥塞, 已断开")
+            self.close(t("发送队列拥塞, 已断开"))
             return False
         except Exception as exc:  # noqa: BLE001
-            self.close(f"加密失败: {exc}")
+            self.close(t("加密失败: {0}").format(exc))
             return False
 
     # -- 密钥轮换 (KeyUpdate) ---------------------------------------------
@@ -317,7 +319,7 @@ class Connection:
             except queue.Full:
                 self._rekey_outstanding = False
                 self._pending_cipher = None
-                self.close("发送队列拥塞, 已断开")
+                self.close(t("发送队列拥塞, 已断开"))
                 return False
         return True
 
@@ -384,7 +386,7 @@ class Connection:
         except queue.Full:
             pass
         except Exception as exc:  # noqa: BLE001
-            self.close(f"密钥轮换失败: {exc}")
+            self.close(t("密钥轮换失败: {0}").format(exc))
 
     @property
     def _is_rekey_leader(self) -> bool:
@@ -511,9 +513,9 @@ class Connection:
                   description: str = "") -> OutgoingTransfer:
         """只为文件发一条"请求"; 等对方同意后才开始推送分片。"""
         if not self.authenticated:
-            raise TransferError("会话还没有通过好友确认")
+            raise TransferError(t("会话还没有通过好友确认"))
         if not os.path.isfile(path):
-            raise TransferError(f"文件不存在: {path}")
+            raise TransferError(t("文件不存在: {0}").format(path))
         size = os.path.getsize(path)
         transfer = OutgoingTransfer(
             transfer_id=uuid.uuid4().hex[:12],
@@ -593,7 +595,7 @@ class Connection:
                 try:
                     os.makedirs(directory, exist_ok=True)
                 except OSError as exc:
-                    self.reject_file(transfer_id, f"无法创建目录: {exc}")
+                    self.reject_file(transfer_id, t("无法创建目录: {0}").format(exc))
                     return False
             if os.path.exists(path):
                 path = unique_download_path(directory, os.path.basename(path))
@@ -604,7 +606,7 @@ class Connection:
             pending.name = os.path.basename(path)
             pending.handle = open(path, "wb")
         except OSError as exc:
-            self.reject_file(transfer_id, f"无法写入文件: {exc}")
+            self.reject_file(transfer_id, t("无法写入文件: {0}").format(exc))
             return False
         self._pending_offers.pop(transfer_id, None)
         self.incoming[transfer_id] = pending
@@ -615,11 +617,13 @@ class Connection:
             self.request_rotation("file-start")
         return accepted
 
-    def reject_file(self, transfer_id: str, reason: str = "对方拒绝接收") -> bool:
+    def reject_file(self, transfer_id: str, reason: str = "") -> bool:
+        reason = reason or t("对方拒绝接收")
         self._pending_offers.pop(transfer_id, None)
         return self.send_message({"t": "file-reject", "id": transfer_id, "reason": reason})
 
-    def cancel_file(self, transfer_id: str, reason: str = "已取消") -> bool:
+    def cancel_file(self, transfer_id: str, reason: str = "") -> bool:
+        reason = reason or t("已取消")
         transfer = self.outgoing.pop(transfer_id, None)
         if transfer is None:
             return False
@@ -642,19 +646,19 @@ class Connection:
                     self.close(str(exc))
                     return
                 except protocol.ProtocolError as exc:
-                    self.close(f"协议错误: {exc}")
+                    self.close(t("协议错误: {0}").format(exc))
                     return
                 self.last_activity = time.time()
                 self._dispatch(frame)
         finally:
-            self.close(self._close_reason or "对端断开")
+            self.close(self._close_reason or t("对端断开"))
 
     def _dispatch(self, frame: Dict[str, Any]) -> None:
         ftype = frame.get("type")
         if ftype == "enc":
             body = frame.get("body")
             if not isinstance(body, dict):
-                self.close("收到非法加密帧")
+                self.close(t("收到非法加密帧"))
                 return
             try:
                 message = self.cipher.decrypt_message(body)
@@ -665,7 +669,7 @@ class Connection:
                     # 只有既解不开、又无法解释来源的帧才当成安全问题断开。
                     if self._looks_like_stale(body):
                         return
-                    self.close(f"密文校验失败: {exc}")
+                    self.close(t("密文校验失败: {0}").format(exc))
                     return
             self._handle_message(message)
         elif ftype == "ping":
@@ -673,7 +677,7 @@ class Connection:
         elif ftype == "pong":
             pass
         else:
-            self.close(f"收到未知帧类型 {ftype!r}")
+            self.close(t("收到未知帧类型 {0!r}").format(ftype))
 
     def send_control(self, kind: str) -> None:
         """发送不加密的控制帧 (只用于 ping/pong, 不含任何隐私内容)。
@@ -757,12 +761,12 @@ class Connection:
         try:
             chunk = self._decrypt_chunk_with_grace(body)
         except DecryptError as exc:
-            self._fail_transfer(transfer, f"分片校验失败: {exc}")
+            self._fail_transfer(transfer, t("分片校验失败: {0}").format(exc))
             return
         try:
             transfer.handle.write(chunk)
         except OSError as exc:
-            self._fail_transfer(transfer, f"写入失败: {exc}")
+            self._fail_transfer(transfer, t("写入失败: {0}").format(exc))
             return
         transfer.hasher.update(chunk)
         transfer.received += len(chunk)
@@ -799,18 +803,17 @@ class Connection:
                 except (OSError, protocol.ProtocolError):
                     break
         finally:
-            self.close(self._close_reason or "发送失败, 连接中断")
+            self.close(self._close_reason or t("发送失败, 连接中断"))
 
     def _heartbeat_loop(self) -> None:
         while not self._closed.wait(HEARTBEAT_INTERVAL):
             if time.time() - self.last_activity > HEARTBEAT_INTERVAL * 4:
-                self.close("心跳超时")
+                self.close(t("心跳超时"))
                 return
             self.send_control("ping")
 
     def describe(self) -> str:
-        return (f"{self.peer_name}@{self.host} 会话 {self.session_id} "
-                f"({self.cipher.sent_messages}↑/{self.cipher.received_messages}↓)")
+        return (t("{0}@{1} 会话 {2} ({3}↑/{4}↓)").format(self.peer_name, self.host, self.session_id, self.cipher.sent_messages, self.cipher.received_messages))
 
 
 # 未通过好友确认的会话只允许这些消息类型

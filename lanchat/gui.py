@@ -37,7 +37,8 @@ from .console import configure_console
 configure_console()
 
 try:
-    from . import __version__
+    from . import __version__, i18n
+    from .i18n import t
     from .constants import DEFAULT_DISCOVERY_PORT, DEFAULT_MAX_ANSWER_ATTEMPTS, DEFAULT_TCP_PORT
     from .service import (
         ChatService, Contact, ContactState, EventKind, ServiceEvent, default_download_dir,
@@ -46,6 +47,8 @@ try:
 except ImportError:  # 允许直接 python lanchat/gui.py
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from lanchat import __version__  # type: ignore
+    from lanchat import i18n  # type: ignore
+    from lanchat.i18n import t  # type: ignore
     from lanchat.constants import (  # type: ignore
         DEFAULT_DISCOVERY_PORT, DEFAULT_MAX_ANSWER_ATTEMPTS, DEFAULT_TCP_PORT,
     )
@@ -67,7 +70,20 @@ C = {
     "warn": "#fa9d3b",
     "err": "#e64340",
 }
-FONT = ("Microsoft YaHei UI", 10) if sys.platform == "win32" else ("Sans", 10)
+def _pick_font_family() -> str:
+    """按当前语言挑界面字体。
+
+    英文/繁体各自用系统自带的对应字体: 用中文字体渲染英文会显得挤, 用英文字体渲染中文
+    会掉字 (Windows 上 Tk 不会自动回退)。语言必须在 import 本模块之前定好 —— 入口
+    chat_gui.py 就是这么做的 (见 i18n.set_language 的调用点)。
+    """
+    if sys.platform != "win32":
+        return "Sans"
+    families = i18n.font_families()
+    return families[0] if families else "Sans"
+
+
+FONT = (_pick_font_family(), 10)
 FONT_BOLD = (FONT[0], 10, "bold")
 FONT_SMALL = (FONT[0], 9)
 
@@ -111,7 +127,7 @@ class NicknameDialog:
         self._done = False
 
         master.deiconify()
-        master.title("局域网聊天 —— 设置昵称")
+        master.title(t("局域网聊天 —— 设置昵称"))
         master.geometry(_center_geometry(master, 560, 420))
         master.minsize(480, 360)
         try:
@@ -123,16 +139,16 @@ class NicknameDialog:
         self.frame.pack(fill="both", expand=True)
         frame = self.frame
 
-        tk.Label(frame, text="给自己起个昵称", font=(FONT[0], 16, "bold"),
+        tk.Label(frame, text=t("给自己起个昵称"), font=(FONT[0], 16, "bold"),
                  bg=C["panel"], fg=C["text"]).pack(anchor="w")
-        tk.Label(frame, text="同一个局域网里的朋友会看到这个名字，用来分辨谁是谁。",
+        tk.Label(frame, text=t("同一个局域网里的朋友会看到这个名字，用来分辨谁是谁。"),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"]).pack(anchor="w", pady=(2, 14))
 
         # 注意 master=master: 一个进程里可能同时存在两个 Tk (自测模式)! 不带 master 的
         # StringVar 会绑到"第一个" Tk 解释器上, 第二个窗口里输入框能打字、但 get() 永远
         # 是空字符串 —— 表现就是"明明输入了答案, 却提示没输入"。
         self.name_var = tk.StringVar(master=master,
-                                     value="" if service.name == "未命名用户" else service.name)
+                                     value="" if service.name == t("未命名用户") else service.name)
         entry = tk.Entry(frame, textvariable=self.name_var, font=(FONT[0], 13),
                          relief="flat", bg=C["bg"], insertbackground=C["text"])
         entry.pack(fill="x", ipady=7)
@@ -140,21 +156,21 @@ class NicknameDialog:
 
         info = tk.Frame(frame, bg=C["panel"])
         info.pack(fill="x", pady=(18, 0))
-        tk.Label(info, text="本机身份指纹", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(info, text=t("本机身份指纹"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(anchor="w")
         tk.Label(info, text=service.fingerprint, font=("Consolas", 12, "bold"),
                  bg=C["panel"], fg=C["text"]).pack(anchor="w")
         tk.Label(info,
-                 text=("已在本机生成长期身份密钥对 (Ed25519) 并保存到:\n"
-                       f"{os.path.join(service.data_dir, 'identity.json')}\n"
-                       "每次连接都会用临时密钥协商出新的会话密钥, 聊天全程加密。"),
+                 text=(t("""已在本机生成长期身份密钥对 (Ed25519) 并保存到:
+{0}
+每次连接都会用临时密钥协商出新的会话密钥, 聊天全程加密。""").format(os.path.join(service.data_dir, 'identity.json'))),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left").pack(anchor="w",
                                                                                      pady=(6, 0))
 
         buttons = tk.Frame(frame, bg=C["panel"])
         buttons.pack(fill="x", pady=(18, 0))
-        _btn(buttons, "开始使用", self._confirm, "primary", width=10).pack(side="right")
-        _btn(buttons, "退出", self._cancel, "ghost", width=6).pack(side="right", padx=(0, 8))
+        _btn(buttons, t("开始使用"), self._confirm, "primary", width=10).pack(side="right")
+        _btn(buttons, t("退出"), self._cancel, "ghost", width=6).pack(side="right", padx=(0, 8))
 
         master.bind("<Return>", lambda _e: self._confirm())
         master.bind("<Escape>", lambda _e: self._cancel())
@@ -164,8 +180,7 @@ class NicknameDialog:
 
         master.update_idletasks()
         master.update()
-        startup_log.step(f"昵称设置窗口已显示: state={master.state()} "
-                         f"viewable={master.winfo_viewable()} geometry={master.winfo_geometry()}")
+        startup_log.step(t("昵称设置窗口已显示: state={0} viewable={1} geometry={2}").format(master.state(), master.winfo_viewable(), master.winfo_geometry()))
         _bring_to_front(master)
 
     def _finish(self) -> None:
@@ -181,12 +196,12 @@ class NicknameDialog:
     def _confirm(self) -> None:
         name = self.name_var.get().strip()
         if not name:
-            messagebox.showwarning("昵称", "请先填写昵称", parent=self.master)
+            messagebox.showwarning(t("昵称"), t("请先填写昵称"), parent=self.master)
             return
         try:
             self.service.set_name(name)
         except ValueError as exc:
-            messagebox.showwarning("昵称", str(exc), parent=self.master)
+            messagebox.showwarning(t("昵称"), str(exc), parent=self.master)
             return
         self.ok = True
         self._finish()
@@ -228,15 +243,15 @@ def _close_toplevel(window: tk.Misc) -> None:
 def unblock_text(name: str, had_my_block: bool, was_friend: bool, has_question: bool) -> str:
     """解除封禁的结果说明。三种情况的语义完全不同, 不能只说一句"已解禁"。"""
     if not had_my_block:
-        return (f"已清除本机『{name} 封禁了你』的标记。\n"
-                "再发一次加好友请求就能确认对方是否真的解禁了。")
+        return (t("""已清除本机『{0} 封禁了你』的标记。
+再发一次加好友请求就能确认对方是否真的解禁了。""").format(name))
     if was_friend:
-        return (f"已解除对 {name} 的封禁。\n"
-                "你们仍然是好友 (封禁只是暂时拒收消息), 正在重新连接;\n"
-                "对方也会收到『已解禁』的通知。")
-    return (f"已解除对 {name} 的封禁, 对方会收到通知。\n"
-            "他之后可以重新发送加好友请求"
-            + ("(你设的验证问题仍然要答对)" if has_question else "") + "。")
+        return (t("""已解除对 {0} 的封禁。
+你们仍然是好友 (封禁只是暂时拒收消息), 正在重新连接;
+对方也会收到『已解禁』的通知。""").format(name))
+    return (t("""已解除对 {0} 的封禁, 对方会收到通知。
+他之后可以重新发送加好友请求""").format(name)
+            + (t("(你设的验证问题仍然要答对)") if has_question else "") + "。")
 
 
 # ===========================================================================
@@ -249,7 +264,7 @@ class ContactsDialog:
         self.app = app
         self.svc = app.service
         self.win = tk.Toplevel(app)
-        self.win.title("添加联系人")
+        self.win.title(t("添加联系人"))
         self.win.configure(bg=C["panel"])
         self.win.transient(app)
 
@@ -258,11 +273,11 @@ class ContactsDialog:
         # 底部按钮只露出一半, 用户根本点不到)。
         header = tk.Frame(self.win, bg=C["panel"], padx=14, pady=10)
         header.pack(fill="x")
-        tk.Label(header, text="局域网中的人", font=FONT_BOLD, bg=C["panel"],
+        tk.Label(header, text=t("局域网中的人"), font=FONT_BOLD, bg=C["panel"],
                  fg=C["text"]).pack(side="left")
         self.count_label = tk.Label(header, text="", font=FONT_SMALL, bg=C["panel"], fg=C["muted"])
         self.count_label.pack(side="left", padx=8)
-        _btn(header, "重新搜索", self.refresh, "ghost").pack(side="right")
+        _btn(header, t("重新搜索"), self.refresh, "ghost").pack(side="right")
 
         search_bar = tk.Frame(self.win, bg=C["panel"], padx=14)
         search_bar.pack(fill="x")
@@ -275,14 +290,14 @@ class ContactsDialog:
         footer = tk.Frame(self.win, bg=C["panel"], padx=14, pady=12)
         footer.pack(side="bottom", fill="x")
         self.footer = footer          # 测试用: 检查按钮有没有被挤出窗口
-        _btn(footer, "发送加好友请求", self.send_request, "primary", width=14).pack(side="right")
-        _btn(footer, "封禁此人", self.block_selected, "danger", width=10).pack(side="right", padx=8)
-        _btn(footer, "解除封禁", self.unblock_selected, "ghost", width=10).pack(side="right")
-        _btn(footer, "给选中的人出题", self.set_question_for_selected, "ghost",
+        _btn(footer, t("发送加好友请求"), self.send_request, "primary", width=14).pack(side="right")
+        _btn(footer, t("封禁此人"), self.block_selected, "danger", width=10).pack(side="right", padx=8)
+        _btn(footer, t("解除封禁"), self.unblock_selected, "ghost", width=10).pack(side="right")
+        _btn(footer, t("给选中的人出题"), self.set_question_for_selected, "ghost",
              width=14).pack(side="right", padx=8)
-        _btn(footer, "取消出题", self.clear_question_for_selected, "ghost",
+        _btn(footer, t("取消出题"), self.clear_question_for_selected, "ghost",
              width=10).pack(side="right")
-        _btn(footer, "关闭", lambda: _close_toplevel(self.win), "ghost",
+        _btn(footer, t("关闭"), lambda: _close_toplevel(self.win), "ghost",
              width=6).pack(side="left")
 
         self.hint = tk.Label(self.win, text="", font=FONT_SMALL, bg=C["panel"], fg=C["muted"],
@@ -290,22 +305,22 @@ class ContactsDialog:
         self.hint.pack(side="bottom", fill="x")
 
         # 出题区: 我给对方出题 (可选)
-        qa = tk.LabelFrame(self.win, text=" 我给选中的人出题 (可选: 以后他要加我, 必须先答对) ",
+        qa = tk.LabelFrame(self.win, text=t(" 我给选中的人出题 (可选: 以后他要加我, 必须先答对) "),
                            bg=C["panel"], fg=C["text"], font=FONT_SMALL, padx=12, pady=8)
         qa.pack(side="bottom", fill="x", padx=14, pady=(4, 6))
         row1 = tk.Frame(qa, bg=C["panel"])
         row1.pack(fill="x")
-        tk.Label(row1, text="问题:", font=FONT_SMALL, bg=C["panel"], fg=C["muted"]).pack(side="left")
+        tk.Label(row1, text=t("问题:"), font=FONT_SMALL, bg=C["panel"], fg=C["muted"]).pack(side="left")
         self.question_var = tk.StringVar(master=self.win)
         tk.Entry(row1, textvariable=self.question_var, font=FONT_SMALL, relief="flat",
                  bg=C["bg"]).pack(side="left", fill="x", expand=True, padx=6, ipady=3)
         row2 = tk.Frame(qa, bg=C["panel"])
         row2.pack(fill="x", pady=(6, 0))
-        tk.Label(row2, text="答案:", font=FONT_SMALL, bg=C["panel"], fg=C["muted"]).pack(side="left")
+        tk.Label(row2, text=t("答案:"), font=FONT_SMALL, bg=C["panel"], fg=C["muted"]).pack(side="left")
         self.answer_var = tk.StringVar(master=self.win)
         tk.Entry(row2, textvariable=self.answer_var, font=FONT_SMALL, relief="flat",
                  bg=C["bg"], show="●").pack(side="left", fill="x", expand=True, padx=6, ipady=3)
-        tk.Label(row2, text="答错上限:", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(row2, text=t("答错上限:"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
         self.attempts_var = tk.StringVar(master=self.win,
                                          value=str(DEFAULT_MAX_ANSWER_ATTEMPTS))
@@ -314,28 +329,28 @@ class ContactsDialog:
         self.question_state = tk.Label(qa, text="", font=FONT_SMALL, bg=C["panel"],
                                        fg=C["muted"], justify="left", anchor="w", wraplength=620)
         self.question_state.pack(anchor="w", pady=(6, 0))
-        tk.Label(qa, text=("答案只在本机参与哈希计算, 不会发送出去; 对方答错到上限会被你自动封禁。\n"
-                           "出题: 填好问题/答案 → 『给选中的人出题』; 反悔了就点『取消出题』。"),
+        tk.Label(qa, text=(t("答案只在本机参与哈希计算, 不会发送出去; 对方答错到上限会被你自动封禁。\n"
+                           "出题: 填好问题/答案 → 『给选中的人出题』; 反悔了就点『取消出题』。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left").pack(anchor="w")
 
         # 答题区: 对方给我出的题 (不需要在列表里选中谁, 直接点按钮就能答)
-        pend = tk.LabelFrame(self.win, text=" 对方给我出的验证问题 (答对后对方才会收到你的请求) ",
+        pend = tk.LabelFrame(self.win, text=t(" 对方给我出的验证问题 (答对后对方才会收到你的请求) "),
                              bg=C["panel"], fg=C["text"], font=FONT_SMALL, padx=12, pady=8)
         pend.pack(side="bottom", fill="x", padx=14, pady=(4, 4))
         self.pending_label = tk.Label(pend, text="", font=FONT_SMALL, bg=C["panel"],
                                       fg=C["muted"], justify="left", anchor="w", wraplength=500)
         self.pending_label.pack(side="left", fill="x", expand=True)
-        self.answer_btn = _btn(pend, "✋ 回答问题", self.answer_pending, "primary", width=11)
+        self.answer_btn = _btn(pend, t("✋ 回答问题"), self.answer_pending, "primary", width=11)
         self.answer_btn.pack(side="right")
 
         # 手动添加: 广播不通的网络 (Tailscale / WireGuard / 跨网段) 只能手填地址
         manual = tk.LabelFrame(
-            self.win, text=" 手动添加 (对方不在同一网段 / 广播不通时用: Tailscale、WireGuard、跨网段) ",
+            self.win, text=t(" 手动添加 (对方不在同一网段 / 广播不通时用: Tailscale、WireGuard、跨网段) "),
             bg=C["panel"], fg=C["text"], font=FONT_SMALL, padx=12, pady=8)
         manual.pack(side="bottom", fill="x", padx=14, pady=(4, 4))
         mrow = tk.Frame(manual, bg=C["panel"])
         mrow.pack(fill="x")
-        tk.Label(mrow, text="对方地址:", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(mrow, text=t("对方地址:"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
         self.manual_var = tk.StringVar(master=self.win)
         self.manual_entry = tk.Entry(mrow, textvariable=self.manual_var, font=FONT_SMALL,
@@ -343,19 +358,19 @@ class ContactsDialog:
         self.manual_entry.pack(side="left", fill="x", expand=True, padx=6, ipady=3)
         self.manual_entry.bind("<Return>", lambda _e: self.add_manual())
         # 提示就写在输入框**旁边**: 只填 IP 和 填 IP:端口 是两条不同的路
-        tk.Label(mrow, text="只填 IP = UDP 单播探测 (自动问出端口)", font=FONT_SMALL,
+        tk.Label(mrow, text=t("只填 IP = UDP 单播探测 (自动问出端口)"), font=FONT_SMALL,
                  bg=C["panel"], fg=C["muted"]).pack(side="left")
         tk.Label(mrow, text=" | ", font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
-        tk.Label(mrow, text="IP:端口 = 直连 (不探测)", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(mrow, text=t("IP:端口 = 直连 (不探测)"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
-        _btn(mrow, "添加并发起加好友请求", self.add_manual, "primary", width=18).pack(side="left",
+        _btn(mrow, t("添加并发起加好友请求"), self.add_manual, "primary", width=18).pack(side="left",
                                                                                     padx=6)
         tk.Label(manual,
-                 text=("例: `100.64.0.7` → 单播问一句『你在吗』, 自动拿到对方端口; "
+                 text=(t("例: `100.64.0.7` → 单播问一句『你在吗』, 自动拿到对方端口; "
                        "`100.64.0.7:50606` → 直接 TCP 连过去 (对方开了『隐身』或改了发现端口时用)。\n"
                        "打错的标点不用管: 中文冒号「：」、全角数字、多打的空格、"
-                       "连 ` 一起粘进来, 都会自动纠正。"),
+                       "连 ` 一起粘进来, 都会自动纠正。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  anchor="w", wraplength=640).pack(fill="x", pady=(4, 0))
 
@@ -364,9 +379,9 @@ class ContactsDialog:
         body.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(body, columns=("name", "addr", "state"), show="headings",
                                  selectmode="browse", height=6)
-        self.tree.heading("name", text="昵称")
-        self.tree.heading("addr", text="地址")
-        self.tree.heading("state", text="状态")
+        self.tree.heading("name", text=t("昵称"))
+        self.tree.heading("addr", text=t("地址"))
+        self.tree.heading("state", text=t("状态"))
         self.tree.column("name", width=150, anchor="w")
         self.tree.column("addr", width=180, anchor="w")
         self.tree.column("state", width=170, anchor="center")
@@ -414,15 +429,15 @@ class ContactsDialog:
                     and keyword not in peer["address"].lower():
                 continue
             state_label = {
-                ContactState.FRIEND.value: "已是好友",
-                ContactState.REQUEST_IN.value: "对方请求加你 (待处理)",
-                ContactState.REQUEST_OUT.value: "已发请求, 等待确认",
-                ContactState.BLOCKED.value: "已封禁",
-                ContactState.STRANGER.value: "可以添加",
-            }.get(peer["state"], "可以添加")
+                ContactState.FRIEND.value: t("已是好友"),
+                ContactState.REQUEST_IN.value: t("对方请求加你 (待处理)"),
+                ContactState.REQUEST_OUT.value: t("已发请求, 等待确认"),
+                ContactState.BLOCKED.value: t("已封禁"),
+                ContactState.STRANGER.value: t("可以添加"),
+            }.get(peer["state"], t("可以添加"))
             if peer.get("manual"):
                 # 本地登记的地址 ≠ 搜到的人。标出来, 不然会以为"隐身没用/广播正常"
-                state_label = "手动登记 · " + state_label
+                state_label = t("手动登记 · ") + state_label
             # iid 用 peer_id: 刷新后能精确还原选中项, 也不会被重名的人弄混
             self.tree.insert("", "end", iid=peer["peer_id"],
                              values=(peer["name"], peer["address"], state_label))
@@ -431,20 +446,20 @@ class ContactsDialog:
             self.tree.selection_set(keep)
         elif shown == 1:
             self.tree.selection_set(self.tree.get_children()[0])
-        self.count_label.configure(text=f"共 {shown} 人")
+        self.count_label.configure(text=t("共 {0} 人").format(shown))
         if not self.peers:
             self.hint.configure(
-                text=("还没有搜索到任何人。请确认:\n"
+                text=(t("还没有搜索到任何人。请确认:\n"
                       "  • 对方也打开了本程序\n"
                       "  • 双方在同一个局域网 / 同一个 Wi-Fi\n"
                       "  • Windows 防火墙允许本程序 (第一次运行要勾选『专用网络』)\n"
                       "  • 用了 Tailscale / WireGuard 这类组网? 它们不跑广播, "
-                      "请在下面『手动添加』里填对方的 IP:端口")
+                      "请在下面『手动添加』里填对方的 IP:端口"))
             )
         else:
             self.hint.configure(
-                text=("选中某人后点『发送加好友请求』; 对方同意后即可加密聊天。\n"
-                      "想确认没有中间人: 和对方核对『设置』里显示的身份指纹。")
+                text=(t("选中某人后点『发送加好友请求』; 对方同意后即可加密聊天。\n"
+                      "想确认没有中间人: 和对方核对『设置』里显示的身份指纹。"))
             )
         self.refresh_pending()
         self.refresh_question_state()
@@ -455,19 +470,17 @@ class ContactsDialog:
             return
         peer = self._selected_peer()
         if peer is None:
-            self.question_state.configure(text="选中一个人后, 这里会显示他现在的验证问题。",
+            self.question_state.configure(text=t("选中一个人后, 这里会显示他现在的验证问题。"),
                                           fg=C["muted"])
             return
         contact = self.svc.get_contact(peer["peer_id"])
         if self.svc.has_question_for(peer["peer_id"]):
             name = contact.name if contact is not None else peer["name"]
             self.question_state.configure(
-                text=f"已给 {name} 出题: {self.svc.question_of(peer['peer_id'])} "
-                     f"(答错 {self.svc.max_attempts_for(peer['peer_id'])} 次自动封禁) "
-                     f"—— 想撤销就点『取消出题』",
+                text=t("已给 {0} 出题: {1} (答错 {2} 次自动封禁) —— 想撤销就点『取消出题』").format(name, self.svc.question_of(peer['peer_id']), self.svc.max_attempts_for(peer['peer_id'])),
                 fg=C["text"])
         else:
-            self.question_state.configure(text=f"{peer['name']} 目前没有验证问题。", fg=C["muted"])
+            self.question_state.configure(text=t("{0} 目前没有验证问题。").format(peer['name']), fg=C["muted"])
 
     def refresh_pending(self) -> None:
         """刷新"对方给我出的题"这一栏 (与列表选中无关)。"""
@@ -475,24 +488,25 @@ class ContactsDialog:
             return
         items = self.svc.pending_challenges()
         if not items:
-            self.pending_label.configure(text="暂时没有。对方给你出了题, 这里会显示题目。",
+            self.pending_label.configure(text=t("暂时没有。对方给你出了题, 这里会显示题目。"),
                                          fg=C["muted"])
-            self.answer_btn.configure(text="✋ 回答问题")
+            self.answer_btn.configure(text=t("✋ 回答问题"))
             return
         first = items[0]
-        more = f" (还有 {len(items) - 1} 个人的题, 答完这个再来)" if len(items) > 1 else ""
+        more = t(" (还有 {0} 个人的题, 答完这个再来)").format(len(items) - 1) if len(items) > 1 else ""
         self.pending_label.configure(
-            text=f"共 {len(items)} 条待回答{more}\n{first['name']}: {first['question']}",
+            text=t("""共 {0} 条待回答{1}
+{2}: {3}""").format(len(items), more, first['name'], first['question']),
             fg=C["text"])
-        self.answer_btn.configure(text=f"✋ 回答问题 ({len(items)})")
+        self.answer_btn.configure(text=t("✋ 回答问题 ({0})").format(len(items)))
 
     def answer_pending(self) -> None:
         """回答对方的验证问题 (不需要在列表里选人)。"""
         if not self.svc.pending_challenges():
             messagebox.showinfo(
-                "验证问题",
-                "现在没有需要回答的验证问题。\n\n"
-                "如果对方设了题, 你发完加好友请求后会在这里看到题目。",
+                t("验证问题"),
+                t("现在没有需要回答的验证问题。\n\n"
+                "如果对方设了题, 你发完加好友请求后会在这里看到题目。"),
                 parent=self.win)
             return
         self.app.open_pending_answers()
@@ -521,31 +535,32 @@ class ContactsDialog:
         """
         raw = self.manual_var.get().strip()
         if not raw:
-            messagebox.showinfo("手动添加",
-                                "请填对方地址:\n"
+            messagebox.showinfo(t("手动添加"),
+                                t("请填对方地址:\n"
                                 "  • 只填 IP (例如 100.64.0.7) —— 程序会自动探测对方端口\n"
                                 "  • 或 IP:TCP端口 (例如 192.168.1.5:50606) —— 直接连, "
-                                "对方开了『隐身』时用这个",
+                                "对方开了『隐身』时用这个"),
                                 parent=self.win)
             return
         # 中文输入法下 "：" 和 ":" 看着一样: 这里自动换成英文冒号/去掉全角数字等。
         # (报过: 打成了中文冒号, 结果提示"端口不是数字", 得让人去猜哪里错了)
         host, port, error = split_manual_address(raw)
         if error:
-            messagebox.showwarning("手动添加", f"{error}\n\n你填的是: {raw}", parent=self.win)
+            messagebox.showwarning(t("手动添加"), t("""{0}
+
+你填的是: {1}""").format(error, raw), parent=self.win)
             return
         fixed = f"{host}:{port}" if port else host
         if fixed != raw:
-            self.app._append("sys", f"已自动整理地址:「{raw}」→「{fixed}」"
-                                    "(中文冒号/全角字符/空格都替你换好了)")
+            self.app._append("sys", t("已自动整理地址:「{0}」→「{1}」(中文冒号/全角字符/空格都替你换好了)").format(raw, fixed))
         contact = self.svc.add_manual_peer(host, port)
         if contact is None:
             messagebox.showwarning(
-                "手动添加",
-                f"没能添加上 {raw}。\n\n"
-                "只填 IP 时要求对方**允许被自动搜索**(设置里的开关开着)、没改发现端口;\n"
-                "对方开了『隐身』的话, 请改成填 `对方IP:对方的TCP端口`"
-                "(对方在设置里能看到自己的当前端口)。",
+                t("手动添加"),
+                t("""没能添加上 {0}。
+
+只填 IP 时要求对方**允许被自动搜索**(设置里的开关开着)、没改发现端口;
+对方开了『隐身』的话, 请改成填 `对方IP:对方的TCP端口`(对方在设置里能看到自己的当前端口)。""").format(raw),
                 parent=self.win)
             return
         self.manual_var.set("")
@@ -557,11 +572,11 @@ class ContactsDialog:
         peer = self._selected_peer()
         if peer is None:
             if not self.tree.get_children():
-                messagebox.showinfo("添加联系人", "现在还没搜索到任何人。\n"
-                                                  "等对方打开程序后点『重新搜索』。", parent=self.win)
+                messagebox.showinfo(t("添加联系人"), t("现在还没搜索到任何人。\n"
+                                                  "等对方打开程序后点『重新搜索』。"), parent=self.win)
             else:
-                messagebox.showinfo("添加联系人", "请先在上面的列表里点一下要加的人 (选中后会高亮),\n"
-                                                  "再点『发送加好友请求』。", parent=self.win)
+                messagebox.showinfo(t("添加联系人"), t("请先在上面的列表里点一下要加的人 (选中后会高亮),\n"
+                                                  "再点『发送加好友请求』。"), parent=self.win)
             return
         self.svc.send_friend_request(peer["peer_id"])
         self.refresh()
@@ -577,27 +592,29 @@ class ContactsDialog:
             return
         if contact.dial_state == "failed" and contact.last_error:
             messagebox.showwarning(
-                "加好友请求没发出去",
-                f"没能联系上 {name}: {contact.last_error}\n\n"
-                "请确认: 对方的程序还开着、双方在同一个局域网 / 同一个 Wi-Fi、"
-                "防火墙允许本程序。然后再点一次『发送加好友请求』。",
+                t("加好友请求没发出去"),
+                t("""没能联系上 {0}: {1}
+
+请确认: 对方的程序还开着、双方在同一个局域网 / 同一个 Wi-Fi、防火墙允许本程序。然后再点一次『发送加好友请求』。""").format(name, contact.last_error),
                 parent=self.win)
 
     def set_question_for_selected(self) -> None:
         """给选中的人设题: 他以后加我时必须答对。"""
         peer = self._selected_peer()
         if peer is None:
-            messagebox.showinfo("设题", "请先在上面的列表里点一下要给谁出题 (选中后会高亮)。",
+            messagebox.showinfo(t("设题"), t("请先在上面的列表里点一下要给谁出题 (选中后会高亮)。"),
                                 parent=self.win)
             return
         question = self.question_var.get().strip()
         answer = self.answer_var.get().strip()
         if not question or not answer:
             missing = "、".join(part for part, value in
-                                (("『问题』", question), ("『答案』", answer)) if not value)
+                                ((t("『问题』"), question), (t("『答案』", answer))) if not value)
             messagebox.showwarning(
-                "设题",
-                f"{missing} 还没有填。\n\n请在上面那一栏把问题和答案都写上, 再点『给选中的人设题』。",
+                t("设题"),
+                t("""{0} 还没有填。
+
+请在上面那一栏把问题和答案都写上, 再点『给选中的人设题』。""").format(missing),
                 parent=self.win)
             return
         self.svc.set_question(peer["peer_id"], question, answer, self._attempts())
@@ -607,18 +624,19 @@ class ContactsDialog:
         """取消给选中的人出的题 (对方以后加我就不用答题了)。"""
         peer = self._selected_peer()
         if peer is None:
-            messagebox.showinfo("取消出题", "请先在上面的列表里点一下要给谁取消出题。",
+            messagebox.showinfo(t("取消出题"), t("请先在上面的列表里点一下要给谁取消出题。"),
                                 parent=self.win)
             return
         if not self.svc.has_question_for(peer["peer_id"]):
-            messagebox.showinfo("取消出题", f"{peer['name']} 现在没有验证问题, 不用取消。",
+            messagebox.showinfo(t("取消出题"), t("{0} 现在没有验证问题, 不用取消。").format(peer['name']),
                                 parent=self.win)
             return
         if not messagebox.askyesno(
-                "取消出题",
-                f"取消给 {peer['name']} 出的题?\n\n"
-                f"当前题目: {self.svc.question_of(peer['peer_id'])}\n"
-                "取消后他再申请加你就不需要答题了。",
+                t("取消出题"),
+                t("""取消给 {0} 出的题?
+
+当前题目: {1}
+取消后他再申请加你就不需要答题了。""").format(peer['name'], self.svc.question_of(peer['peer_id'])),
                 parent=self.win):
             return
         self.svc.clear_question(peer["peer_id"])
@@ -627,14 +645,15 @@ class ContactsDialog:
     def block_selected(self) -> None:
         peer = self._selected_peer()
         if peer is None:
-            messagebox.showinfo("封禁", "请先在上面的列表里点一下要封禁的人。", parent=self.win)
+            messagebox.showinfo(t("封禁"), t("请先在上面的列表里点一下要封禁的人。"), parent=self.win)
             return
         contact = self.svc.get_contact(peer["peer_id"])
         keep = bool(contact and contact.is_friend)
         if not messagebox.askyesno(
-                "封禁",
-                f"确定封禁 {peer['name']} 吗?\n对方之后发来的加好友请求和消息都会被拒收。"
-                + ("\n\n你们还是好友: 解禁之后好友关系照旧, 消息也能继续发。"
+                t("封禁"),
+                t("""确定封禁 {0} 吗?
+对方之后发来的加好友请求和消息都会被拒收。""").format(peer['name'])
+                + (t("\n\n你们还是好友: 解禁之后好友关系照旧, 消息也能继续发。")
                    if keep else ""),
                 parent=self.win):
             return
@@ -645,28 +664,29 @@ class ContactsDialog:
         """解除封禁 (恢复原来的关系, 并通知对方)。"""
         peer = self._selected_peer()
         if peer is None:
-            messagebox.showinfo("解除封禁", "请先在上面的列表里点一下要解禁的人。",
+            messagebox.showinfo(t("解除封禁"), t("请先在上面的列表里点一下要解禁的人。"),
                                 parent=self.win)
             return
         contact = self.svc.get_contact(peer["peer_id"])
         blocked = bool(contact and (contact.blocked or contact.blocked_by_peer))
         if not blocked and not peer.get("blocked"):
-            messagebox.showinfo("解除封禁", f"{peer['name']} 没有被封禁。", parent=self.win)
+            messagebox.showinfo(t("解除封禁"), t("{0} 没有被封禁。").format(peer['name']), parent=self.win)
             return
         was_friend = bool(contact and (contact.friend_before_block or contact.is_friend))
         had_my_block = bool(contact and contact.blocked)
         if not messagebox.askyesno(
-                "解除封禁",
-                f"解除对 {peer['name']} 的封禁?\n"
-                + ("你们是好友, 解禁后关系保留, 对方会收到『已解禁』通知。"
+                t("解除封禁"),
+                t("""解除对 {0} 的封禁?
+""").format(peer['name'])
+                + (t("你们是好友, 解禁后关系保留, 对方会收到『已解禁』通知。")
                    if had_my_block and was_friend else
-                   "解禁后对方会收到通知, 可以重新发送加好友请求。"
+                   t("解禁后对方会收到通知, 可以重新发送加好友请求。")
                    if had_my_block else
-                   "这只是清掉本机『对方封了你』的标记。"),
+                   t("这只是清掉本机『对方封了你』的标记。")),
                 parent=self.win):
             return
         if self.svc.unblock(peer["peer_id"]):
-            messagebox.showinfo("解除封禁",
+            messagebox.showinfo(t("解除封禁"),
                                 unblock_text(peer["name"], had_my_block, was_friend,
                                              self.svc.has_question_for(peer["peer_id"])),
                                 parent=self.win)
@@ -682,34 +702,34 @@ class NotificationsDialog:
     def __init__(self, app: "ChatApp") -> None:
         self.app = app
         self.win = tk.Toplevel(app)
-        self.win.title("通知")
+        self.win.title(t("通知"))
         self.win.configure(bg=C["panel"])
         self.win.transient(app)
 
         header = tk.Frame(self.win, bg=C["panel"], padx=14, pady=10)
         header.pack(fill="x")
-        tk.Label(header, text="最近发生了什么", font=FONT_BOLD, bg=C["panel"],
+        tk.Label(header, text=t("最近发生了什么"), font=FONT_BOLD, bg=C["panel"],
                  fg=C["text"]).pack(side="left")
         self.count_label = tk.Label(header, text="", font=FONT_SMALL, bg=C["panel"], fg=C["muted"])
         self.count_label.pack(side="left", padx=8)
 
         footer = tk.Frame(self.win, bg=C["panel"], padx=14, pady=12)
         footer.pack(side="bottom", fill="x")
-        _btn(footer, "关闭", lambda: _close_toplevel(self.win), "ghost",
+        _btn(footer, t("关闭"), lambda: _close_toplevel(self.win), "ghost",
              width=6).pack(side="right")
-        _btn(footer, "清空", self.clear, "ghost", width=6).pack(side="right", padx=8)
+        _btn(footer, t("清空"), self.clear, "ghost", width=6).pack(side="right", padx=8)
 
         tk.Label(self.win, font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  padx=14, anchor="w",
-                 text="双击一条通知可以跳到对应的人（如果还在联系人列表里）。").pack(
+                 text=t("双击一条通知可以跳到对应的人（如果还在联系人列表里）。")).pack(
             side="bottom", fill="x")
 
         body = tk.Frame(self.win, bg=C["panel"], padx=14, pady=8)
         body.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(body, columns=("when", "text"), show="headings",
                                  selectmode="browse", height=12)
-        self.tree.heading("when", text="时间")
-        self.tree.heading("text", text="内容")
+        self.tree.heading("when", text=t("时间"))
+        self.tree.heading("text", text=t("内容"))
         self.tree.column("when", width=90, anchor="w")
         self.tree.column("text", width=430, anchor="w")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -739,7 +759,7 @@ class NotificationsDialog:
             level = str(item.get("level", "info"))
             tag = level if level in ("warn", "err") else ""
             self.tree.insert("", "end", values=(when, item["text"]), tags=(tag,))
-        self.count_label.configure(text=f"共 {len(self.rows)} 条" if self.rows else "暂时没有")
+        self.count_label.configure(text=t("共 {0} 条").format(len(self.rows)) if self.rows else t("暂时没有"))
 
     def jump(self) -> None:
         sel = self.tree.selection()
@@ -767,13 +787,13 @@ class FriendRequestsDialog:
         self.app = app
         self.svc = app.service
         self.win = tk.Toplevel(app)
-        self.win.title("新朋友")
+        self.win.title(t("新朋友"))
         self.win.configure(bg=C["panel"])
         self.win.transient(app)
 
         header = tk.Frame(self.win, bg=C["panel"], padx=14, pady=10)
         header.pack(fill="x")
-        tk.Label(header, text="加好友请求", font=FONT_BOLD, bg=C["panel"],
+        tk.Label(header, text=t("加好友请求"), font=FONT_BOLD, bg=C["panel"],
                  fg=C["text"]).pack(side="left")
         self.hint = tk.Label(header, text="", font=FONT_SMALL, bg=C["panel"], fg=C["muted"])
         self.hint.pack(side="left", padx=8)
@@ -782,23 +802,23 @@ class FriendRequestsDialog:
         footer = tk.Frame(self.win, bg=C["panel"], padx=14, pady=12)
         footer.pack(side="bottom", fill="x")
         self.footer = footer          # 测试用: 检查按钮有没有被挤出窗口
-        _btn(footer, "同意", self.accept, "primary", width=8).pack(side="right")
-        _btn(footer, "拒绝", self.reject, "ghost", width=8).pack(side="right", padx=8)
-        _btn(footer, "封禁此人", self.block, "danger", width=10).pack(side="left")
-        _btn(footer, "关闭", lambda: _close_toplevel(self.win), "ghost",
+        _btn(footer, t("同意"), self.accept, "primary", width=8).pack(side="right")
+        _btn(footer, t("拒绝"), self.reject, "ghost", width=8).pack(side="right", padx=8)
+        _btn(footer, t("封禁此人"), self.block, "danger", width=10).pack(side="left")
+        _btn(footer, t("关闭"), lambda: _close_toplevel(self.win), "ghost",
              width=6).pack(side="left", padx=8)
 
         tk.Label(self.win, font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  padx=14, anchor="w",
-                 text=("同意之前建议和对方核对『身份指纹』(对方在『设置』里能看到), "
-                       "指纹一致说明中间没有人冒充。")).pack(side="bottom", fill="x")
+                 text=(t("同意之前建议和对方核对『身份指纹』(对方在『设置』里能看到), "
+                       "指纹一致说明中间没有人冒充。"))).pack(side="bottom", fill="x")
 
         body = tk.Frame(self.win, bg=C["panel"], padx=14, pady=8)
         body.pack(fill="both", expand=True)
         self.tree = ttk.Treeview(body, columns=("name", "fp", "note", "when"), show="headings",
                                  selectmode="browse", height=8)
-        for col, title, width in (("name", "昵称", 120), ("fp", "身份指纹", 160),
-                                  ("note", "附言", 190), ("when", "时间", 90)):
+        for col, title, width in (("name", t("昵称"), 120), ("fp", t("身份指纹"), 160),
+                                  ("note", t("附言"), 190), ("when", t("时间"), 90)):
             self.tree.heading(col, text=title)
             self.tree.column(col, width=width, anchor="w")
         self.tree.pack(side="left", fill="both", expand=True)
@@ -839,8 +859,8 @@ class FriendRequestsDialog:
             self.tree.selection_set(keep)
         elif len(self.requests) == 1:
             self.tree.selection_set(self.tree.get_children()[0])
-        self.hint.configure(text=f"{len(self.requests)} 条待处理" if self.requests
-                            else "暂时没有新的请求")
+        self.hint.configure(text=t("{0} 条待处理").format(len(self.requests)) if self.requests
+                            else t("暂时没有新的请求"))
 
     def _selected(self) -> Optional[Contact]:
         sel = self.tree.selection()
@@ -855,8 +875,8 @@ class FriendRequestsDialog:
     def accept(self) -> None:
         contact = self._selected()
         if contact is None:
-            messagebox.showinfo("新朋友",
-                                "请先在列表里点一下要同意的那条请求 (选中后会高亮), 再点『同意』。",
+            messagebox.showinfo(t("新朋友"),
+                                t("请先在列表里点一下要同意的那条请求 (选中后会高亮), 再点『同意』。"),
                                 parent=self.win)
             return
         self.svc.accept_request(contact.peer_id)
@@ -866,7 +886,7 @@ class FriendRequestsDialog:
     def reject(self) -> None:
         contact = self._selected()
         if contact is None:
-            messagebox.showinfo("新朋友", "请先在列表里点一下要拒绝的那条请求。", parent=self.win)
+            messagebox.showinfo(t("新朋友"), t("请先在列表里点一下要拒绝的那条请求。"), parent=self.win)
             return
         self.svc.reject_request(contact.peer_id)
         self.refresh()
@@ -874,9 +894,10 @@ class FriendRequestsDialog:
     def block(self) -> None:
         contact = self._selected()
         if contact is None:
-            messagebox.showinfo("封禁", "请先在列表里点一下要封禁的那条请求。", parent=self.win)
+            messagebox.showinfo(t("封禁"), t("请先在列表里点一下要封禁的那条请求。"), parent=self.win)
             return
-        if messagebox.askyesno("封禁", f"封禁 {contact.name}?\n对方之后无法再发请求或消息。",
+        if messagebox.askyesno(t("封禁"), t("""封禁 {0}?
+对方之后无法再发请求或消息。""").format(contact.name),
                                parent=self.win):
             self.svc.block(contact.peer_id)
             self.refresh()
@@ -905,36 +926,36 @@ class IncomingFileDialog:
         self.chosen_path = ""            # 用户自己挑的完整路径 (空 = 用接收目录)
 
         self.win = tk.Toplevel(app)
-        self.win.title("收到文件")
+        self.win.title(t("收到文件"))
         self.win.configure(bg=C["panel"])
         self.win.geometry("640x390")
         self.win.transient(app)
 
         frame = tk.Frame(self.win, bg=C["panel"], padx=20, pady=16)
         frame.pack(fill="both", expand=True)
-        tk.Label(frame, text=f"{peer_name} 想给你发送文件", font=FONT_BOLD, bg=C["panel"],
+        tk.Label(frame, text=t("{0} 想给你发送文件").format(peer_name), font=FONT_BOLD, bg=C["panel"],
                  fg=C["text"]).pack(anchor="w")
         tk.Label(frame, text=f"📎 {name}   ({human_size(size)})", font=(FONT[0], 13),
                  bg=C["panel"], fg=C["green_dark"], wraplength=580,
                  justify="left").pack(anchor="w", pady=(8, 12))
 
-        tk.Label(frame, text="存到哪里?", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(frame, text=t("存到哪里?"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(anchor="w")
         buttons = tk.Frame(frame, bg=C["panel"])
         buttons.pack(fill="x", pady=(6, 10))
-        _btn(buttons, "📥 接收 (存到我的接收目录)", self.accept_default, "primary",
+        _btn(buttons, t("📥 接收 (存到我的接收目录)"), self.accept_default, "primary",
              width=24).pack(side="left")
-        _btn(buttons, "📂 另存到别处…", self.accept_as, "ghost",
+        _btn(buttons, t("📂 另存到别处…"), self.accept_as, "ghost",
              width=14).pack(side="left", padx=10)
-        _btn(buttons, "拒绝", self.reject, "danger", width=8).pack(side="left")
+        _btn(buttons, t("拒绝"), self.reject, "danger", width=8).pack(side="left")
 
-        tk.Label(frame, text="我的接收目录 (可在『⚙ 设置』里改):", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(frame, text=t("我的接收目录 (可在『⚙ 设置』里改):"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(anchor="w")
         self.target_label = tk.Label(frame, text="", font=FONT_SMALL, bg=C["panel"],
                                      fg=C["text"], justify="left", anchor="w", wraplength=560)
         self.target_label.pack(anchor="w")
-        tk.Label(frame, text=("点『另存到别处…』会打开系统的保存对话框, 目录和文件名都能自己改。\n"
-                              "文件收完会校验 SHA256; 目标已存在时自动改名, 不会覆盖。"),
+        tk.Label(frame, text=(t("点『另存到别处…』会打开系统的保存对话框, 目录和文件名都能自己改。\n"
+                              "文件收完会校验 SHA256; 目标已存在时自动改名, 不会覆盖。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  wraplength=580).pack(anchor="w", pady=(8, 0))
         self._refresh_target()
@@ -951,18 +972,19 @@ class IncomingFileDialog:
 
     def _refresh_target(self) -> None:
         if self.chosen_path:
-            self.target_label.configure(text=f"将保存到你自己选的位置:\n{self.chosen_path}",
+            self.target_label.configure(text=t("""将保存到你自己选的位置:
+{0}""").format(self.chosen_path),
                                         fg=C["green_dark"])
         else:
-            self.target_label.configure(text=f"{self.default_dir}\n"
-                                             f"(文件: {self.name})", fg=C["text"])
+            self.target_label.configure(text=t("""{0}
+(文件: {1})""").format(self.default_dir, self.name), fg=C["text"])
 
     def choose_path(self) -> str:
         """让用户自己挑一个保存位置 (文件名默认用对方发来的名字)。"""
         start_dir = (os.path.dirname(self.chosen_path) if self.chosen_path
                      else (self.app.last_save_dir or self.default_dir))
         path = filedialog.asksaveasfilename(
-            parent=self.win, title="选择保存位置", initialfile=self.name,
+            parent=self.win, title=t("选择保存位置"), initialfile=self.name,
             initialdir=start_dir or self.default_dir,
             defaultextension=os.path.splitext(self.name)[1])
         if path:
@@ -992,9 +1014,9 @@ class IncomingFileDialog:
         self.svc.accept_file(self.transfer_id, save_path=save_path)
         target = save_path or os.path.join(self.default_dir, self.name)
         if self.app._current == self.peer_id:
-            self.app._append("sys", f"已同意接收 {self.name} -> {target}")
+            self.app._append("sys", t("已同意接收 {0} -> {1}").format(self.name, target))
         # 记一条通知: 用户随时能在『📢 通知』里查到"这个文件到底存哪了"
-        self.app.record_notice(f"接收 {self.name} -> {target}", self.peer_id, "info")
+        self.app.record_notice(t("接收 {0} -> {1}").format(self.name, target), self.peer_id, "info")
         self.close()
 
     def reject(self) -> None:
@@ -1002,7 +1024,7 @@ class IncomingFileDialog:
             self.done = True
             self.svc.reject_file(self.transfer_id)
             if self.app._current == self.peer_id:
-                self.app._append("sys", f"已拒绝接收 {self.name}")
+                self.app._append("sys", t("已拒绝接收 {0}").format(self.name))
         self.close()
 
     def close(self) -> None:
@@ -1030,7 +1052,7 @@ class AnswerQuestionDialog:
         self.peer_id = peer_id
         self.nonce = nonce
         self.win = tk.Toplevel(app)
-        self.win.title("加好友验证问题")
+        self.win.title(t("加好友验证问题"))
         self.win.configure(bg=C["panel"])
         self.win.geometry("500x280")
         self.win.transient(app)
@@ -1039,13 +1061,13 @@ class AnswerQuestionDialog:
         frame.pack(fill="both", expand=True)
         contact = self.svc.get_contact(peer_id)
         name = contact.name if contact else peer_id
-        tk.Label(frame, text=f"{name} 的验证问题", font=FONT_BOLD, bg=C["panel"],
+        tk.Label(frame, text=t("{0} 的验证问题").format(name), font=FONT_BOLD, bg=C["panel"],
                  fg=C["text"]).pack(anchor="w")
         self.question_label = tk.Label(frame, text=question, font=(FONT[0], 12), bg=C["panel"],
                                        fg=C["green_dark"], wraplength=440, justify="left")
         self.question_label.pack(anchor="w", pady=(8, 12))
-        tk.Label(frame, text=(f"答对之后 {name} 才会收到并处理你的加好友请求; 答错 {attempts} 次会被"
-                              f"对方自动封禁。\n答案只在本机计算, 不上网。"),
+        tk.Label(frame, text=(t("""答对之后 {0} 才会收到并处理你的加好友请求; 答错 {1} 次会被对方自动封禁。
+答案只在本机计算, 不上网。""").format(name, attempts)),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  wraplength=440).pack(anchor="w")
         self.answer_var = tk.StringVar(master=self.win)
@@ -1060,12 +1082,12 @@ class AnswerQuestionDialog:
 
         row = tk.Frame(frame, bg=C["panel"])
         row.pack(fill="x", pady=(6, 0))
-        self.submit_btn = _btn(row, "提交答案", self.submit, "primary", width=10)
+        self.submit_btn = _btn(row, t("提交答案"), self.submit, "primary", width=10)
         self.submit_btn.pack(side="right")
-        _btn(row, "稍后再答", self.close, "ghost", width=8).pack(side="right", padx=8)
-        _btn(row, "取消加好友请求", self.cancel_request, "danger",
+        _btn(row, t("稍后再答"), self.close, "ghost", width=8).pack(side="right", padx=8)
+        _btn(row, t("取消加好友请求"), self.cancel_request, "danger",
              width=14).pack(side="left")
-        tk.Label(frame, text="不想答了可以点『取消加好友请求』: 对方那边这道题会作废。",
+        tk.Label(frame, text=t("不想答了可以点『取消加好友请求』: 对方那边这道题会作废。"),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  wraplength=440).pack(anchor="w", pady=(8, 0))
 
@@ -1103,9 +1125,10 @@ class AnswerQuestionDialog:
         contact = self.svc.get_contact(self.peer_id)
         name = contact.name if contact else self.peer_id
         if not messagebox.askyesno(
-                "取消加好友请求",
-                f"不再加 {name}, 放弃回答这道题?\n\n"
-                "对方那边这道验证问题会作废; 以后想加需要重新发请求。",
+                t("取消加好友请求"),
+                t("""不再加 {0}, 放弃回答这道题?
+
+对方那边这道验证问题会作废; 以后想加需要重新发请求。""").format(name),
                 parent=self.win):
             return
         self.svc.cancel_friend_request(self.peer_id)
@@ -1121,17 +1144,17 @@ class AnswerQuestionDialog:
         if not self.svc.answer_challenge(self.peer_id, answer):
             # 失败原因 (连接断了 / 提问已失效) 已经由服务通过状态栏和聊天窗口说明
             if messagebox.askyesno(
-                    "答案没发出去",
-                    "这条提问已经失效, 或者和对方的连接断了 (对方可能已经下线)。\n\n"
-                    "要取消这条加好友请求吗? 取消后对方那边这道题也作废。",
+                    t("答案没发出去"),
+                    t("这条提问已经失效, 或者和对方的连接断了 (对方可能已经下线)。\n\n"
+                    "要取消这条加好友请求吗? 取消后对方那边这道题也作废。"),
                     parent=self.win):
                 self.svc.cancel_friend_request(self.peer_id)
             self.close()
             return
         # 提交完**不关窗**: 等对方的判定结果, 答错了可以当场改了再交
         self.waiting = True
-        self.submit_btn.configure(state="disabled", text="等待校验…")
-        self.result_label.configure(text="已提交, 等待对方校验…", fg=C["muted"])
+        self.submit_btn.configure(state="disabled", text=t("等待校验…"))
+        self.result_label.configure(text=t("已提交, 等待对方校验…"), fg=C["muted"])
         self._wait_job = self.win.after(12000, self._wait_timeout)
 
     def _wait_timeout(self) -> None:
@@ -1141,8 +1164,8 @@ class AnswerQuestionDialog:
             return
         self.waiting = False
         try:
-            self.submit_btn.configure(state="normal", text="提交答案")
-            self.result_label.configure(text="对方一直没有回应 (可能已经下线), 可以再试一次或取消请求。",
+            self.submit_btn.configure(state="normal", text=t("提交答案"))
+            self.result_label.configure(text=t("对方一直没有回应 (可能已经下线), 可以再试一次或取消请求。"),
                                         fg=C["warn"])
         except tk.TclError:
             pass
@@ -1164,20 +1187,20 @@ class AnswerQuestionDialog:
         if ok:
             self.submit_btn.configure(state="disabled")
             self.entry.configure(state="disabled")
-            self.result_label.configure(text="✅ 答案正确! 等对方在他的『🔔 新朋友』里同意即可。",
+            self.result_label.configure(text=t("✅ 答案正确! 等对方在他的『🔔 新朋友』里同意即可。"),
                                         fg=C["green_dark"])
             self._close_job = self.win.after(1500, self.close)
             return
-        self.submit_btn.configure(state="normal", text="再交一次")
+        self.submit_btn.configure(state="normal", text=t("再交一次"))
         self.answer_var.set("")
         if attempts_left > 0:
             self.result_label.configure(
-                text=f"❌ 答案不对, 还剩 {attempts_left} 次机会 —— 改一下再点『再交一次』。",
+                text=t("❌ 答案不对, 还剩 {0} 次机会 —— 改一下再点『再交一次』。").format(attempts_left),
                 fg=C["err"])
         else:
             self.result_label.configure(
-                text="❌ 机会用完了, 对方已经自动封禁你。\n可以点『取消加好友请求』, "
-                     "等对方解禁后再重新申请。",
+                text=t("❌ 机会用完了, 对方已经自动封禁你。\n可以点『取消加好友请求』, "
+                     "等对方解禁后再重新申请。"),
                 fg=C["err"])
             self.submit_btn.configure(state="disabled")
         self._focus_entry()
@@ -1192,17 +1215,18 @@ class AnswerQuestionDialog:
             stray = ""
         if stray and "\n" not in stray:
             if messagebox.askyesno(
-                    "答案框是空的",
-                    "这个弹窗里的答案框没有内容。\n\n"
-                    f"你刚输入的「{stray[:40]}」在聊天输入框里, 把它当作答案提交吗?",
+                    t("答案框是空的"),
+                    t("""这个弹窗里的答案框没有内容。
+
+你刚输入的「{0}」在聊天输入框里, 把它当作答案提交吗?""").format(stray[:40]),
                     parent=self.win):
                 self.answer_var.set(stray)
                 self.submit()
             return
         messagebox.showwarning(
-            "还差一步: 填答案",
-            "这个弹窗里的输入框还是空的, 请把答案填进去再点『提交答案』。\n"
-            "(弹窗没抢到键盘焦点时, 打字会跑到主窗口的聊天输入框里)",
+            t("还差一步: 填答案"),
+            t("这个弹窗里的输入框还是空的, 请把答案填进去再点『提交答案』。\n"
+            "(弹窗没抢到键盘焦点时, 打字会跑到主窗口的聊天输入框里)"),
             parent=self.win)
 
 
@@ -1242,19 +1266,19 @@ class ChatApp(tk.Frame):
         self._build()
         from . import startup_log
 
-        startup_log.step("主界面: 控件搭建完成")
+        startup_log.step(t("主界面: 控件搭建完成"))
         master.configure(bg=C["panel"])
         master.protocol("WM_DELETE_WINDOW", self.on_close)
 
         if self.own_service:
             self.service.start()
-            startup_log.step("主界面: 服务已启动")
+            startup_log.step(t("主界面: 服务已启动"))
         self._drain_job = self.after(80, self._drain)
         self._tick_job = self.after(1000, self._tick)
         self.refresh_contacts()
         self._show_welcome()
         self._update_answer_button()
-        startup_log.step("主界面: 首次渲染完成")
+        startup_log.step(t("主界面: 首次渲染完成"))
 
     # ------------------------------------------------------------------
     # 界面搭建
@@ -1278,17 +1302,17 @@ class ChatApp(tk.Frame):
 
         tools = tk.Frame(top, bg=C["sidebar"])
         tools.pack(side="right", padx=12)
-        self.requests_btn = _btn(tools, "🔔 新朋友", self.open_requests, "primary")
+        self.requests_btn = _btn(tools, t("🔔 新朋友"), self.open_requests, "primary")
         self.requests_btn.pack(side="right")
-        _btn(tools, "➕ 添加联系人", self.open_add_contacts, "ghost").pack(side="right", padx=8)
-        self.answer_btn = _btn(tools, "✋ 回答问题", self.open_pending_answers, "ghost")
+        _btn(tools, t("➕ 添加联系人"), self.open_add_contacts, "ghost").pack(side="right", padx=8)
+        self.answer_btn = _btn(tools, t("✋ 回答问题"), self.open_pending_answers, "ghost")
         self.answer_btn.pack(side="right")
-        self.notice_btn = _btn(tools, "📢 通知", self.open_notices, "ghost")
+        self.notice_btn = _btn(tools, t("📢 通知"), self.open_notices, "ghost")
         self.notice_btn.pack(side="right", padx=8)
-        _btn(tools, "⚙ 设置", self.open_settings, "ghost").pack(side="right")
+        _btn(tools, t("⚙ 设置"), self.open_settings, "ghost").pack(side="right")
         if getattr(self.args, "self_test", False):
             # 只在自测模式里出现的按钮: 真的把本窗口下线几秒, 再让它自己回来
-            self.offline_btn = _btn(tools, "🧪 掉线 6 秒", self.simulate_offline, "ghost")
+            self.offline_btn = _btn(tools, t("🧪 掉线 6 秒"), self.simulate_offline, "ghost")
             self.offline_btn.pack(side="right", padx=8)
 
         body = tk.Frame(self, bg=C["panel"])
@@ -1323,14 +1347,14 @@ class ChatApp(tk.Frame):
         self.contact_list.bind("<Button-3>", self._popup_menu)
 
         self.list_menu = tk.Menu(self, tearoff=0)
-        self.list_menu.add_command(label="发送文件", command=self.send_file)
-        self.list_menu.add_command(label="重新连接", command=self._menu_reconnect)
+        self.list_menu.add_command(label=t("发送文件"), command=self.send_file)
+        self.list_menu.add_command(label=t("重新连接"), command=self._menu_reconnect)
         self.list_menu.add_separator()
-        self.list_menu.add_command(label="取消加好友请求", command=self._menu_cancel_request)
-        self.list_menu.add_command(label="设置验证问题", command=self._menu_set_question)
-        self.list_menu.add_command(label="删除好友", command=self._menu_remove)
-        self.list_menu.add_command(label="封禁此人", command=self._menu_block)
-        self.list_menu.add_command(label="解除封禁", command=self._menu_unblock)
+        self.list_menu.add_command(label=t("取消加好友请求"), command=self._menu_cancel_request)
+        self.list_menu.add_command(label=t("设置验证问题"), command=self._menu_set_question)
+        self.list_menu.add_command(label=t("删除好友"), command=self._menu_remove)
+        self.list_menu.add_command(label=t("封禁此人"), command=self._menu_block)
+        self.list_menu.add_command(label=t("解除封禁"), command=self._menu_unblock)
 
         right = tk.Frame(body, bg=C["bg"])
         right.grid(row=0, column=1, sticky="nsew")
@@ -1375,8 +1399,8 @@ class ChatApp(tk.Frame):
         self.entry.bind("<Return>", self._on_enter)
         buttons = tk.Frame(bottom, bg=C["panel"], padx=8, pady=6)
         buttons.grid(row=0, column=1, sticky="s")
-        _btn(buttons, "发送", self.send_message, "primary", width=6).pack(side="right")
-        _btn(buttons, "📎 文件", self.send_file, "ghost", width=7).pack(side="right", padx=6)
+        _btn(buttons, t("发送"), self.send_message, "primary", width=6).pack(side="right")
+        _btn(buttons, t("📎 文件"), self.send_file, "ghost", width=7).pack(side="right", padx=6)
         self.progress_label = tk.Label(bottom, text="", font=FONT_SMALL, bg=C["panel"],
                                        fg=C["muted"], anchor="w", padx=10)
         self.progress_label.grid(row=1, column=0, columnspan=2, sticky="ew")
@@ -1418,11 +1442,11 @@ class ChatApp(tk.Frame):
             self.service.set_active_peer("")      # 这个人不在列表里了, 新消息要重新算未读
             self._show_welcome()
         pending = len(self.service.pending_requests())
-        self.filter_label.configure(text=f"好友 {len(self.service.friends())} 人"
-                                         + (f" · 待处理请求 {pending}" if pending else ""))
-        self.me_label.configure(text=f"我: {self.service.name}")
-        self.fp_label.configure(text=f"指纹 {self.service.fingerprint}")
-        self.requests_btn.configure(text=f"🔔 新朋友 ({pending})" if pending else "🔔 新朋友")
+        self.filter_label.configure(text=t("好友 {0} 人").format(len(self.service.friends()))
+                                         + (t(" · 待处理请求 {0}").format(pending) if pending else ""))
+        self.me_label.configure(text=t("我: {0}").format(self.service.name))
+        self.fp_label.configure(text=t("指纹 {0}").format(self.service.fingerprint))
+        self.requests_btn.configure(text=t("🔔 新朋友 ({0})").format(pending) if pending else t("🔔 新朋友"))
         self._update_header()
         self._call_hooks("contacts")
 
@@ -1441,13 +1465,13 @@ class ChatApp(tk.Frame):
             mark = "…"
         parts: List[str] = []
         if contact.state == ContactState.REQUEST_OUT.value:
-            parts.append("[等待验证]")
+            parts.append(t("[等待验证]"))
         if contact.blocked_by_peer:
-            parts.append("[对方封禁了你]")
+            parts.append(t("[对方封禁了你]"))
         elif contact.blocked:
-            parts.append("[已封禁]" + ("(解禁后仍是好友)" if contact.friend_before_block else ""))
+            parts.append(t("[已封禁]") + (t("(解禁后仍是好友)") if contact.friend_before_block else ""))
         if contact.is_friend and not contact.connected:
-            parts.append("[离线]")           # 好友离线也要看得出来
+            parts.append(t("[离线]"))           # 好友离线也要看得出来
         if self.service.has_question_for(contact.peer_id):
             parts.append("🧩")
         suffix = (" " + " ".join(parts)) if parts else ""
@@ -1491,29 +1515,29 @@ class ChatApp(tk.Frame):
             return
         self.chat_title.configure(text=contact.name)
         if contact.blocked_by_peer:
-            state, color = "对方把你封禁了 (对方解禁时会通知你)", C["err"]
+            state, color = t("对方把你封禁了 (对方解禁时会通知你)"), C["err"]
         elif contact.blocked:
-            state = "已封禁" + (" (解禁后仍是好友)" if contact.friend_before_block else "")
+            state = t("已封禁") + (t(" (解禁后仍是好友)") if contact.friend_before_block else "")
             color = C["err"]
         elif contact.encrypted:
             session = contact.connection.session_id if contact.connection else ""
             rekeys = contact.connection.rekeys_done if contact.connection else 0
-            state = f"🔒 加密连接中 (会话 {session}"
-            state += f", 本会话已轮换密钥 {rekeys} 次)" if rekeys else ")"
+            state = t("🔒 加密连接中 (会话 {0}").format(session)
+            state += t(", 本会话已轮换密钥 {0} 次)").format(rekeys) if rekeys else ")"
             color = C["green_dark"]
         elif contact.connected:
-            state, color = "🔑 通道已建立 (等待对方确认好友)", C["warn"]
+            state, color = t("🔑 通道已建立 (等待对方确认好友)"), C["warn"]
         elif contact.state == ContactState.REQUEST_OUT.value:
-            state, color = "等待对方同意加好友", C["warn"]
+            state, color = t("等待对方同意加好友"), C["warn"]
         elif contact.state == ContactState.REQUEST_IN.value:
-            state, color = "对方请求加你为好友 (在『新朋友』里处理)", C["warn"]
+            state, color = t("对方请求加你为好友 (在『新朋友』里处理)"), C["warn"]
         elif contact.dial_state == "connecting":
-            state, color = "正在连接…", C["muted"]
+            state, color = t("正在连接…"), C["muted"]
         else:
             detail = f" · {contact.last_error}" if contact.last_error else ""
-            state, color = f"未连接{detail}", C["muted"]
+            state, color = t("未连接{0}").format(detail), C["muted"]
         self.chat_state.configure(text=state, fg=color)
-        self.chat_fp.configure(text=f"指纹 {contact.fingerprint}")
+        self.chat_fp.configure(text=t("指纹 {0}").format(contact.fingerprint))
 
     # ------------------------------------------------------------------
     # 聊天记录
@@ -1527,27 +1551,22 @@ class ChatApp(tk.Frame):
             for tag, text, ts in self._chat_log.get(contact.peer_id, []):
                 self._insert_line(tag, text, ts)
             if contact.state == ContactState.REQUEST_IN.value:
-                self._append("sys", f"{contact.name} 请求加你为好友, 点上方『🔔 新朋友』处理。"
-                                    "同意之后才会建立加密会话。")
+                self._append("sys", t("{0} 请求加你为好友, 点上方『🔔 新朋友』处理。同意之后才会建立加密会话。").format(contact.name))
             elif contact.state == ContactState.REQUEST_OUT.value:
-                self._append("sys", f"已向 {contact.name} 发出加好友请求, 等待对方确认。")
+                self._append("sys", t("已向 {0} 发出加好友请求, 等待对方确认。").format(contact.name))
             elif contact.blocked_by_peer:
-                self._append("sys", f"{contact.name} 把你封禁了。对方解禁时会通知你, "
-                                    "之后你可以重新点『➕ 添加联系人』发送加好友请求。")
+                self._append("sys", t("{0} 把你封禁了。对方解禁时会通知你, 之后你可以重新点『➕ 添加联系人』发送加好友请求。").format(contact.name))
             elif contact.blocked:
-                self._append("sys", f"你已封禁 {contact.name} (暂时拒收他的消息和请求)。"
-                                    + ("解禁后你们仍然是好友。" if contact.friend_before_block
-                                       else "解禁后他可以重新申请加你。")
-                                    + "右键联系人可解除封禁。")
+                self._append("sys", t("你已封禁 {0} (暂时拒收他的消息和请求)。").format(contact.name)
+                                    + (t("解禁后你们仍然是好友。") if contact.friend_before_block
+                                       else t("解禁后他可以重新申请加你。"))
+                                    + t("右键联系人可解除封禁。"))
             elif contact.is_friend and not contact.connected:
-                self._append("sys", "对方不在线。对方上线后会自动重新建立加密连接。")
+                self._append("sys", t("对方不在线。对方上线后会自动重新建立加密连接。"))
             if self.service.has_question_for(contact.peer_id):
-                self._append("sys", f"已设置验证问题: {self.service.question_of(contact.peer_id)} "
-                                    f"(答错 {self.service.max_attempts_for(contact.peer_id)} "
-                                    f"次自动封禁)")
+                self._append("sys", t("已设置验证问题: {0} (答错 {1} 次自动封禁)").format(self.service.question_of(contact.peer_id), self.service.max_attempts_for(contact.peer_id)))
             if contact.encrypted and contact.connection is not None:
-                self._append("sys", f"本次会话已用临时密钥协商: {contact.connection.session_id}"
-                                    f" (第 {contact.connection.cipher.epoch + 1} 轮密钥)")
+                self._append("sys", t("本次会话已用临时密钥协商: {0} (第 {1} 轮密钥)").format(contact.connection.session_id, contact.connection.cipher.epoch + 1))
         self.chat.configure(state="disabled")
 
     def _append(self, tag: str, text: str, extra: tuple = (), ts: Optional[float] = None,
@@ -1597,7 +1616,7 @@ class ChatApp(tk.Frame):
                 import subprocess
                 subprocess.Popen(["xdg-open", directory])
         except Exception as exc:  # noqa: BLE001
-            messagebox.showinfo("文件位置", f"{path}\n({exc})")
+            messagebox.showinfo(t("文件位置"), f"{path}\n({exc})")
 
     # ------------------------------------------------------------------
     # 事件
@@ -1639,17 +1658,17 @@ class ChatApp(tk.Frame):
             return
         if kind is EventKind.FILE_DONE:
             path = str(event.data.get("path", ""))
-            self._remember(event.peer_id, "in", f"📥 已接收文件: {path}")
+            self._remember(event.peer_id, "in", t("📥 已接收文件: {0}").format(path))
             if self._current == event.peer_id:
                 self.chat.configure(state="normal")
                 self.chat.insert("end", f"[{time.strftime('%H:%M:%S')}] ", ("meta",))
-                self.chat.insert("end", "📥 已接收文件: ", ("in",))
+                self.chat.insert("end", t("📥 已接收文件: "), ("in",))
                 self.chat.insert("end", path, ("link",))
                 self.chat.insert("end", "\n")
                 self.chat.see("end")
                 self.chat.configure(state="disabled")
-            self.status.configure(text=f"文件已保存: {path}")
-            self.record_notice(f"文件已保存: {path}", event.peer_id, "info")
+            self.status.configure(text=t("文件已保存: {0}").format(path))
+            self.record_notice(t("文件已保存: {0}").format(path), event.peer_id, "info")
             return
         if kind is EventKind.FILE_FAILED:
             self._append("err", event.text, peer_id=event.peer_id)
@@ -1689,12 +1708,12 @@ class ChatApp(tk.Frame):
         name = contact.name if contact else event.name
         text = str(event.data.get("text", event.text))
         ts = float(event.data.get("ts", 0) or 0) or None
-        line = f"{name}: {text}" if direction == "in" else f"我: {text}"
+        line = f"{name}: {text}" if direction == "in" else t("我: {0}").format(text)
         self._append("in" if direction == "in" else "out", line,
                      ts=ts, peer_id=event.peer_id)
         if self._current != event.peer_id:
             self.status.configure(
-                text=f"{'收到' if direction == 'in' else '发出'} — {name}: {text[:24]}")
+                text=t("{0} — {1}: {2}").format(t('收到') if direction == 'in' else t('发出'), name, text[:24]))
 
     def _on_question(self, event: ServiceEvent) -> None:
         """对方出了验证问题 -> 弹窗让用户回答。
@@ -1718,7 +1737,7 @@ class ChatApp(tk.Frame):
             if alive:
                 existing.close()
         if self._current == event.peer_id:
-            self._append("warn", f"{event.name} 的验证问题: {question}", peer_id=event.peer_id)
+            self._append("warn", t("{0} 的验证问题: {1}").format(event.name, question), peer_id=event.peer_id)
         dialog = AnswerQuestionDialog(
             self, event.peer_id, question,
             int(event.data.get("max_attempts", DEFAULT_MAX_ANSWER_ATTEMPTS)), nonce=nonce)
@@ -1731,10 +1750,10 @@ class ChatApp(tk.Frame):
         items = self.service.pending_challenges()
         if not items:
             messagebox.showinfo(
-                "验证问题",
-                "现在没有需要回答的验证问题。\n\n"
+                t("验证问题"),
+                t("现在没有需要回答的验证问题。\n\n"
                 "对方设了验证问题时, 你发完加好友请求就会自动弹出题目, "
-                "也可以随时点这个按钮来回答。")
+                "也可以随时点这个按钮来回答。"))
             return
         item = items[0]
         dialog = self._answer_dialogs.get(item["peer_id"])
@@ -1763,13 +1782,13 @@ class ChatApp(tk.Frame):
         except Exception:  # noqa: BLE001 - 界面刷新不能影响主流程
             pending = 0
         if pending:
-            self.answer_btn.configure(text=f"✋ 回答问题 ({pending})", bg=C["warn"], fg="#ffffff",
+            self.answer_btn.configure(text=t("✋ 回答问题 ({0})").format(pending), bg=C["warn"], fg="#ffffff",
                                       activebackground="#e08b2a")
         else:
-            self.answer_btn.configure(text="✋ 回答问题", bg=C["sidebar"], fg=C["text"],
+            self.answer_btn.configure(text=t("✋ 回答问题"), bg=C["sidebar"], fg=C["text"],
                                       activebackground=C["border"])
         unread = sum(1 for item in self.notices if not item["read"])
-        self.notice_btn.configure(text=f"📢 通知 ({unread})" if unread else "📢 通知",
+        self.notice_btn.configure(text=t("📢 通知 ({0})").format(unread) if unread else t("📢 通知"),
                                   bg=C["warn"] if unread else C["sidebar"],
                                   fg="#ffffff" if unread else C["text"],
                                   activebackground="#e08b2a" if unread else C["border"])
@@ -1787,7 +1806,7 @@ class ChatApp(tk.Frame):
         del self.notices[:-100]                # 只留最近 100 条
         self._update_answer_button()
         if popup:
-            title = {"warn": "提示", "err": "注意"}.get(level, "通知")
+            title = {"warn": t("提示"), "err": t("注意")}.get(level, t("通知"))
             try:
                 messagebox.showinfo(title, text)
             except tk.TclError:
@@ -1814,14 +1833,13 @@ class ChatApp(tk.Frame):
         name = str(event.data.get("name"))
         size = human_size(event.data.get("size", 0))
         if event.data.get("direction") == "out":
-            self._append("out", f"我: 📎 发送文件 {name} ({size})", peer_id=event.peer_id)
+            self._append("out", t("我: 📎 发送文件 {0} ({1})").format(name, size), peer_id=event.peer_id)
             return
-        self._append("in", f"{event.name}: 📎 发来文件 {name} ({size})", peer_id=event.peer_id)
+        self._append("in", t("{0}: 📎 发来文件 {1} ({2})").format(event.name, name, size), peer_id=event.peer_id)
         if event.data.get("auto_accepted"):
             # 设置里开了"自动接收": 不再弹窗, 但也不能悄无声息地存下去
             self.record_notice(
-                f"已自动接收 {event.name} 的文件 {name} ({size}), 保存到 {self.service.download_dir}"
-                " (可在『⚙ 设置』里关掉自动接收, 改成每次自己选位置)",
+                t("已自动接收 {0} 的文件 {1} ({2}), 保存到 {3} (可在『⚙ 设置』里关掉自动接收, 改成每次自己选位置)").format(event.name, name, size, self.service.download_dir),
                 event.peer_id, "info")
             return
         # 让用户可以自己选保存位置 (默认目录 / 选个位置 / 拒绝)
@@ -1860,7 +1878,7 @@ class ChatApp(tk.Frame):
         if now - self._last_progress_at.get(key, 0.0) < 0.3 and progress < 100:
             return
         self._last_progress_at[key] = now
-        direction = "发送" if event.data.get("direction") == "out" else "接收"
+        direction = t("发送") if event.data.get("direction") == "out" else t("接收")
         sent = float(event.data.get("sent", 0) or 0)
         size = float(event.data.get("size", 0) or 0)
 
@@ -1876,7 +1894,7 @@ class ChatApp(tk.Frame):
         eta = ""
         if speed > 1 and size > sent:
             left = (size - sent) / speed
-            eta = f" · 剩余约 {int(left)}s" if 1 <= left < 3600 else ""
+            eta = t(" · 剩余约 {0}s").format(int(left)) if 1 <= left < 3600 else ""
         self.progress_label.configure(
             text=f"{direction} {event.data.get('name')}: {progress:.0f}% "
                  f"({human_size(sent)}/{human_size(size)})"
@@ -1887,10 +1905,9 @@ class ChatApp(tk.Frame):
         except tk.TclError:
             pass
         if progress >= 100:
-            speed_txt = f" · 平均 {human_size(sent)}/s" if sent and state["t"] else ""
+            speed_txt = t(" · 平均 {0}/s").format(human_size(sent)) if sent and state["t"] else ""
             self.progress_label.configure(
-                text=f"{direction} {event.data.get('name')} 完成 "
-                     f"({human_size(sent)}){speed_txt}")
+                text=t("{0} {1} 完成 ({2}){3}").format(direction, event.data.get('name'), human_size(sent), speed_txt))
             self._after(2500, self._clear_progress)
 
     def _tick(self) -> None:
@@ -1900,12 +1917,10 @@ class ChatApp(tk.Frame):
         # 注意: 轮换次数是"每一条会话"各自的计数 (重连就重新开始), 所以这里不跨会话求和 ——
         # 求和出来的数字跟对方窗口对不上, 会让人以为出错了。要看次数请看聊天窗口标题旁那一行。
         rekey = self.service.rekey_every
-        rekey_tip = f" · 密钥轮换 每 {rekey} 条" if rekey else " · 密钥轮换已关闭"
-        stealth = "" if self.service.discoverable else " · 🕶 隐身中 (别人搜不到你)"
+        rekey_tip = t(" · 密钥轮换 每 {0} 条").format(rekey) if rekey else t(" · 密钥轮换已关闭")
+        stealth = "" if self.service.discoverable else t(" · 🕶 隐身中 (别人搜不到你)")
         self.status.configure(
-            text=f"我是「{self.service.name}」 · 好友 {len(self.service.friends())} 人 · "
-                 f"已连接 {len(online)} 人 · TCP 端口 {self.service.tcp_port}{rekey_tip}"
-                 f"{stealth} · 接收目录 {self.service.download_dir}"
+            text=t("我是「{0}」 · 好友 {1} 人 · 已连接 {2} 人 · TCP 端口 {3}{4}{5} · 接收目录 {6}").format(self.service.name, len(self.service.friends()), len(online), self.service.tcp_port, rekey_tip, stealth, self.service.download_dir)
         )
         self._update_answer_button()
         self._tick_job = self.after(1000, self._tick)
@@ -1916,14 +1931,16 @@ class ChatApp(tk.Frame):
     def _show_welcome(self) -> None:
         self.chat.configure(state="normal")
         self.chat.delete("1.0", "end")
-        self.chat.insert("end", "欢迎使用局域网聊天\n\n", ("sys",))
+        self.chat.insert("end", t("欢迎使用局域网聊天\n\n"), ("sys",))
         self.chat.insert("end", (
-            "1. 点右上角「➕ 添加联系人」查看局域网里自动搜索到的人\n"
-            "2. 选中某人发送加好友请求, 对方在「🔔 新朋友」里同意后即可聊天\n"
-            "3. 对方设了验证问题时会自动弹窗提问; 关掉了也能点「✋ 回答问题」继续答\n"
-            "4. 聊天与文件全部端到端加密, 每收发若干条消息会重新协商会话密钥\n"
-            "5. 右键左侧联系人可以 发送文件 / 重连 / 设验证问题 / 删除 / 封禁 / 解禁\n\n"
-            f"我的身份指纹: {self.service.fingerprint} (可在『⚙ 设置』里复制给对方核对)\n"
+            t("""1. 点右上角「➕ 添加联系人」查看局域网里自动搜索到的人
+2. 选中某人发送加好友请求, 对方在「🔔 新朋友」里同意后即可聊天
+3. 对方设了验证问题时会自动弹窗提问; 关掉了也能点「✋ 回答问题」继续答
+4. 聊天与文件全部端到端加密, 每收发若干条消息会重新协商会话密钥
+5. 右键左侧联系人可以 发送文件 / 重连 / 设验证问题 / 删除 / 封禁 / 解禁
+
+我的身份指纹: {0} (可在『⚙ 设置』里复制给对方核对)
+""").format(self.service.fingerprint)
         ), ("sys",))
         self.chat.configure(state="disabled")
 
@@ -1939,22 +1956,22 @@ class ChatApp(tk.Frame):
             return
         contact = self._current_contact()
         if contact is None:
-            messagebox.showinfo("发送", "请先在左侧选择一位好友")
+            messagebox.showinfo(t("发送"), t("请先在左侧选择一位好友"))
             return
         if contact.state == ContactState.REQUEST_IN.value:
-            messagebox.showinfo("还不是好友",
-                                f"{contact.name} 请求加你为好友, 请先在『🔔 新朋友』里同意。")
+            messagebox.showinfo(t("还不是好友"),
+                                t("{0} 请求加你为好友, 请先在『🔔 新朋友』里同意。").format(contact.name))
             return
         if contact.blocked_by_peer:
-            messagebox.showinfo("发送",
-                                f"对方({contact.name})把你封禁了, 现在发不出去。\n"
-                                "对方解禁时会通知你, 之后可以再试。")
+            messagebox.showinfo(t("发送"),
+                                t("""对方({0})把你封禁了, 现在发不出去。
+对方解禁时会通知你, 之后可以再试。""").format(contact.name))
             return
         if contact.blocked:
-            messagebox.showinfo("发送", f"你已封禁 {contact.name}")
+            messagebox.showinfo(t("发送"), t("你已封禁 {0}").format(contact.name))
             return
         if not contact.is_friend:
-            messagebox.showinfo("发送", f"{contact.name} 还不是你的好友, 请先发送加好友请求。")
+            messagebox.showinfo(t("发送"), t("{0} 还不是你的好友, 请先发送加好友请求。").format(contact.name))
             return
         # 是好友但此刻没连上: **照样发** —— 消息会记在本会话记录里, 对方一上线自动补发
         # (以前这里直接拦住, 用户只能等对方上线再重打一遍)。
@@ -1964,18 +1981,18 @@ class ChatApp(tk.Frame):
     def send_file(self) -> None:
         contact = self._current_contact()
         if contact is None:
-            messagebox.showinfo("发送文件", "请先在左侧选择一位好友")
+            messagebox.showinfo(t("发送文件"), t("请先在左侧选择一位好友"))
             return
         if not contact.encrypted:
-            messagebox.showinfo("发送文件", f"与 {contact.name} 还没有可用的加密连接")
+            messagebox.showinfo(t("发送文件"), t("与 {0} 还没有可用的加密连接").format(contact.name))
             return
-        path = filedialog.askopenfilename(title="选择要发送的文件")
+        path = filedialog.askopenfilename(title=t("选择要发送的文件"))
         if not path:
             return
         if not messagebox.askyesno(
-                "发送文件",
-                f"把 {os.path.basename(path)} ({human_size(os.path.getsize(path))}) "
-                f"发给 {contact.name}?\n对方同意接收后才会开始传输。"):
+                t("发送文件"),
+                t("""把 {0} ({1}) 发给 {2}?
+对方同意接收后才会开始传输。""").format(os.path.basename(path), human_size(os.path.getsize(path)), contact.name)):
             return
         self.service.send_file(path, contact.peer_id)
 
@@ -1995,10 +2012,10 @@ class ChatApp(tk.Frame):
         对面把这期间缺的聊天记录补发给我 (见 README 5.7)。
         """
         if not self.service.simulate_offline(6.0):
-            self._append("sys", "现在不能模拟掉线 (服务没在跑, 或者上一次还没结束)")
+            self._append("sys", t("现在不能模拟掉线 (服务没在跑, 或者上一次还没结束)"))
             return
-        self._append("sys", "🧪 模拟掉线 6 秒: 这几秒里对面会显示『对方不在线』; "
-                            "到点我会重新上线, 双方自动重连, 对面还会把缺的对话补发给我。")
+        self._append("sys", t("🧪 模拟掉线 6 秒: 这几秒里对面会显示『对方不在线』; "
+                            "到点我会重新上线, 双方自动重连, 对面还会把缺的对话补发给我。"))
 
     def _menu_reconnect(self) -> None:
         contact = self._current_contact()
@@ -2014,28 +2031,29 @@ class ChatApp(tk.Frame):
         """取消自己发出的加好友请求 (对方还没同意时)。"""
         contact = self._current_contact()
         if contact is None:
-            messagebox.showinfo("取消请求", "请先在左侧选中一个人")
+            messagebox.showinfo(t("取消请求"), t("请先在左侧选中一个人"))
             return
         if contact.is_friend:
-            messagebox.showinfo("取消请求", f"{contact.name} 已经是你的好友了")
+            messagebox.showinfo(t("取消请求"), t("{0} 已经是你的好友了").format(contact.name))
             return
         if not messagebox.askyesno(
-                "取消加好友请求",
-                f"取消发给 {contact.name} 的加好友请求?\n"
-                "对方那边这道验证问题也会作废, 以后想加需要重新发请求。"):
+                t("取消加好友请求"),
+                t("""取消发给 {0} 的加好友请求?
+对方那边这道验证问题也会作废, 以后想加需要重新发请求。""").format(contact.name)):
             return
         self.service.cancel_friend_request(contact.peer_id)
 
     def _menu_remove(self) -> None:
         contact = self._current_contact()
-        if contact and messagebox.askyesno("删除好友", f"确定删除好友 {contact.name}?"):
+        if contact and messagebox.askyesno(t("删除好友"), t("确定删除好友 {0}?").format(contact.name)):
             self.service.remove_friend(contact.peer_id)
 
     def _menu_block(self) -> None:
         contact = self._current_contact()
         if contact and messagebox.askyesno(
-                "封禁", f"封禁 {contact.name}?\n对方之后发来的请求和消息都会被拒收。"
-                + ("\n\n你们还是好友: 解禁之后关系照旧, 消息也能继续发。"
+                t("封禁"), t("""封禁 {0}?
+对方之后发来的请求和消息都会被拒收。""").format(contact.name)
+                + (t("\n\n你们还是好友: 解禁之后关系照旧, 消息也能继续发。")
                    if contact.is_friend else "")):
             self.service.block(contact.peer_id)
 
@@ -2047,7 +2065,7 @@ class ChatApp(tk.Frame):
             name = contact.name
             if self.service.unblock(contact.peer_id):
                 messagebox.showinfo(
-                    "解除封禁",
+                    t("解除封禁"),
                     unblock_text(name, had_my_block, was_friend,
                                  self.service.has_question_for(contact.peer_id)))
 
@@ -2078,7 +2096,7 @@ class ChatApp(tk.Frame):
 
     # ------------------------------------------------------------------
     def on_close(self) -> None:
-        if not messagebox.askokcancel("退出", "确定要退出吗? 退出后别人将看不到你。"):
+        if not messagebox.askokcancel(t("退出"), t("确定要退出吗? 退出后别人将看不到你。")):
             return
         self._closing = True
         self.service.set_active_peer("")     # 关窗口后不该再把新消息当"已读"
@@ -2094,7 +2112,7 @@ class ChatApp(tk.Frame):
                     self.after_cancel(job)
                 except tk.TclError:
                     pass
-        self.status.configure(text="正在退出…")
+        self.status.configure(text=t("正在退出…"))
         self.update_idletasks()
         if self.own_service:
             threading.Thread(target=self.service.stop, daemon=True).start()
@@ -2119,7 +2137,7 @@ class SettingsDialog:
         self.app = app
         self.svc = app.service
         self.win = tk.Toplevel(app)
-        self.win.title("设置")
+        self.win.title(t("设置"))
         self.win.configure(bg=C["panel"])
         width, height = 620, 880
         try:                       # 内容有 870 多像素高: 屏幕够大就一次显示完, 不够才滚动
@@ -2152,64 +2170,82 @@ class SettingsDialog:
 
         footer = tk.Frame(self.win, bg=C["panel"], padx=18, pady=10)
         footer.pack(side="bottom", fill="x")
-        self.close_btn = _btn(footer, "关闭", lambda: _close_toplevel(self.win), "ghost", width=6)
+        self.close_btn = _btn(footer, t("关闭"), lambda: _close_toplevel(self.win), "ghost", width=6)
         self.close_btn.pack(side="right")
 
-        tk.Label(frame, text="昵称", font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
+        tk.Label(frame, text=t("昵称"), font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
         row = tk.Frame(frame, bg=C["panel"])
         row.pack(fill="x", pady=(4, 12))
         self.name_var = tk.StringVar(master=self.win, value=self.svc.name)
         tk.Entry(row, textvariable=self.name_var, font=FONT, relief="flat",
                  bg=C["bg"]).pack(side="left", fill="x", expand=True, ipady=4)
-        _btn(row, "保存", self.save_name, "primary").pack(side="left", padx=8)
+        _btn(row, t("保存"), self.save_name, "primary").pack(side="left", padx=8)
 
-        tk.Label(frame, text="我的身份指纹 (发给朋友核对, 可确认没有中间人)",
+        tk.Label(frame, text=t("我的身份指纹 (发给朋友核对, 可确认没有中间人)"),
                  font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
         fp_row = tk.Frame(frame, bg=C["panel"])
         fp_row.pack(fill="x", pady=(4, 12))
         tk.Label(fp_row, text=self.svc.fingerprint, font=("Consolas", 13, "bold"),
                  bg=C["panel"], fg=C["text"]).pack(side="left")
-        _btn(fp_row, "复制", self.copy_fingerprint, "ghost").pack(side="left", padx=8)
+        _btn(fp_row, t("复制"), self.copy_fingerprint, "ghost").pack(side="left", padx=8)
+
+        tk.Label(frame, text=t("界面语言 (改完点『应用』, 重启后生效)"), font=FONT_BOLD,
+                 bg=C["panel"], fg=C["text"]).pack(anchor="w")
+        lang_row = tk.Frame(frame, bg=C["panel"])
+        lang_row.pack(fill="x", pady=(4, 12))
+        self._lang_codes = i18n.available()
+        self.lang_var = tk.StringVar(
+            master=self.win,
+            value=i18n.display_name(self.svc.language or i18n.current_language()))
+        combo = ttk.Combobox(lang_row, state="readonly", width=30, font=FONT_SMALL,
+                             textvariable=self.lang_var,
+                             values=[i18n.display_name(code) for code in self._lang_codes])
+        combo.pack(side="left")
+        _btn(lang_row, t("应用"), self.apply_language, "ghost").pack(side="left", padx=8)
+        tk.Label(frame, text=(t("语言选择会记进 settings.json, 下次启动生效 "
+                               "(不影响已经收到的消息和文件)。")),
+                 font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
+                 wraplength=460).pack(fill="x", pady=(0, 12))
 
         opts = tk.Frame(frame, bg=C["panel"])
         opts.pack(fill="x", pady=(0, 12))
         self.auto_file_var = tk.BooleanVar(master=self.win, value=self.svc.auto_accept_files)
-        tk.Checkbutton(opts, text="自动接收文件 (好友发来的文件不再询问)",
+        tk.Checkbutton(opts, text=t("自动接收文件 (好友发来的文件不再询问)"),
                        variable=self.auto_file_var, bg=C["panel"], font=FONT_SMALL,
                        activebackground=C["panel"], command=self.toggle_file).pack(anchor="w")
         self.auto_conn_var = tk.BooleanVar(master=self.win, value=self.svc.auto_connect_friends)
-        tk.Checkbutton(opts, text="自动连接好友 (对方上线后自动建立加密通道)",
+        tk.Checkbutton(opts, text=t("自动连接好友 (对方上线后自动建立加密通道)"),
                        variable=self.auto_conn_var, bg=C["panel"], font=FONT_SMALL,
                        activebackground=C["panel"], command=self.toggle_conn).pack(anchor="w")
 
-        tk.Label(frame, text="密钥轮换 (每收发多少条消息重新协商一次会话密钥)", font=FONT_BOLD,
+        tk.Label(frame, text=t("密钥轮换 (每收发多少条消息重新协商一次会话密钥)"), font=FONT_BOLD,
                  bg=C["panel"], fg=C["text"]).pack(anchor="w")
         rekey_row = tk.Frame(frame, bg=C["panel"])
         rekey_row.pack(fill="x", pady=(4, 4))
         self.rekey_var = tk.StringVar(master=self.win, value=str(self.svc.rekey_every))
         tk.Spinbox(rekey_row, from_=0, to=500, increment=5, width=6,
                    textvariable=self.rekey_var, font=FONT_SMALL).pack(side="left")
-        tk.Label(rekey_row, text="条 (0 = 关闭; 轮换后旧密钥立即作废)", font=FONT_SMALL,
+        tk.Label(rekey_row, text=t("条 (0 = 关闭; 轮换后旧密钥立即作废)"), font=FONT_SMALL,
                  bg=C["panel"], fg=C["muted"]).pack(side="left", padx=8)
-        _btn(rekey_row, "应用", self.apply_rekey, "ghost").pack(side="left")
-        tk.Label(frame, text=("和对方设置不同时这样协商: 任意一方填 0 就不自动轮换, "
-                              "否则取更严格(更小)的那个; 改完会立即通知对方一起生效。"),
+        _btn(rekey_row, t("应用"), self.apply_rekey, "ghost").pack(side="left")
+        tk.Label(frame, text=(t("和对方设置不同时这样协商: 任意一方填 0 就不自动轮换, "
+                              "否则取更严格(更小)的那个; 改完会立即通知对方一起生效。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(0, 12))
 
-        tk.Label(frame, text="黑名单 (封禁只是暂时拒收消息和请求, 不会删好友)",
+        tk.Label(frame, text=t("黑名单 (封禁只是暂时拒收消息和请求, 不会删好友)"),
                  font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
         self.blocked_list = tk.Listbox(frame, height=5, font=FONT_SMALL, relief="flat",
                                        bg=C["bg"], highlightthickness=0)
         self.blocked_list.pack(fill="both", expand=True, pady=(4, 8))
-        _btn(frame, "解除封禁 (恢复原来的关系, 对方会收到通知)", self.unblock_selected,
+        _btn(frame, t("解除封禁 (恢复原来的关系, 对方会收到通知)"), self.unblock_selected,
              "ghost").pack(anchor="w")
-        tk.Label(frame, text=("想彻底断开一个人请用『删除好友』(对方会收到提示); "
-                              "封禁 + 解禁不会删掉好友关系。"),
+        tk.Label(frame, text=(t("想彻底断开一个人请用『删除好友』(对方会收到提示); "
+                              "封禁 + 解禁不会删掉好友关系。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(4, 8))
 
-        tk.Label(frame, text="本机端口 (0 = 每次随机; 手动添加时对方要填这个端口)",
+        tk.Label(frame, text=t("本机端口 (0 = 每次随机; 手动添加时对方要填这个端口)"),
                  font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
         port_row = tk.Frame(frame, bg=C["panel"])
         port_row.pack(fill="x", pady=(4, 2))
@@ -2217,25 +2253,25 @@ class SettingsDialog:
         self.port_entry = tk.Entry(port_row, textvariable=self.port_var, width=8, font=FONT_SMALL,
                                    relief="flat", bg=C["bg"])
         self.port_entry.pack(side="left", ipady=3)
-        _btn(port_row, "保存", self.apply_tcp_port, "ghost").pack(side="left", padx=6)
-        tk.Label(port_row, text=f"当前实际端口: {self.svc.tcp_port}", font=FONT_SMALL,
+        _btn(port_row, t("保存"), self.apply_tcp_port, "ghost").pack(side="left", padx=6)
+        tk.Label(port_row, text=t("当前实际端口: {0}").format(self.svc.tcp_port), font=FONT_SMALL,
                  bg=C["panel"], fg=C["muted"]).pack(side="left", padx=6)
         self.discoverable_var = tk.BooleanVar(master=self.win, value=self.svc.discoverable)
         tk.Checkbutton(frame,
-                       text="允许被自动搜索 (关掉后别人搜不到我: 不广播也不回应单播探测)",
+                       text=t("允许被自动搜索 (关掉后别人搜不到我: 不广播也不回应单播探测)"),
                        variable=self.discoverable_var, bg=C["panel"], font=FONT_SMALL,
                        activebackground=C["panel"],
                        command=self.toggle_discoverable).pack(anchor="w", pady=(2, 2))
-        tk.Label(frame, text=("关掉之后, 别人只能『手动添加』填 `你的IP:上面那个端口` 来加你; "
-                              "你自己仍然能看到别人、也能正常聊天。"),
+        tk.Label(frame, text=(t("关掉之后, 别人只能『手动添加』填 `你的IP:上面那个端口` 来加你; "
+                              "你自己仍然能看到别人、也能正常聊天。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(0, 8))
-        tk.Label(frame, text=("广播能通的网络不用管端口 (端口会随广播告诉对方)。"
-                              "手动模式: 只填对方 IP 就能自动探测出端口, 双方都不用固定端口。"),
+        tk.Label(frame, text=(t("广播能通的网络不用管端口 (端口会随广播告诉对方)。"
+                              "手动模式: 只填对方 IP 就能自动探测出端口, 双方都不用固定端口。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(0, 12))
 
-        tk.Label(frame, text="我的接收目录 (所有收到的文件都存这里)", font=FONT_BOLD,
+        tk.Label(frame, text=t("我的接收目录 (所有收到的文件都存这里)"), font=FONT_BOLD,
                  bg=C["panel"], fg=C["text"]).pack(anchor="w")
         dir_row = tk.Frame(frame, bg=C["panel"])
         dir_row.pack(fill="x", pady=(4, 12))
@@ -2243,17 +2279,17 @@ class SettingsDialog:
                                  bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                                  wraplength=440)
         self.dir_label.pack(side="left", fill="x", expand=True)
-        _btn(dir_row, "改目录…", self.choose_download_dir, "ghost").pack(side="left", padx=6)
-        _btn(dir_row, "用系统下载目录", self.use_system_download_dir, "ghost").pack(side="left")
-        _btn(dir_row, "打开", self.open_download_dir, "ghost").pack(side="left", padx=6)
-        tk.Label(frame, text=("默认就是系统的『下载』目录; 这个设置会存进 settings.json, "
-                              "下次启动继续沿用。想恢复默认点『用系统下载目录』。"),
+        _btn(dir_row, t("改目录…"), self.choose_download_dir, "ghost").pack(side="left", padx=6)
+        _btn(dir_row, t("用系统下载目录"), self.use_system_download_dir, "ghost").pack(side="left")
+        _btn(dir_row, t("打开"), self.open_download_dir, "ghost").pack(side="left", padx=6)
+        tk.Label(frame, text=(t("默认就是系统的『下载』目录; 这个设置会存进 settings.json, "
+                              "下次启动继续沿用。想恢复默认点『用系统下载目录』。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left", anchor="w",
                  wraplength=460).pack(fill="x", pady=(0, 10))
 
         tk.Label(frame,
-                 text=(f"数据目录: {self.svc.data_dir}\n"
-                       "身份密钥保存在 identity.json; 删除它会生成新身份 (等于换了个人)。"),
+                 text=(t("""数据目录: {0}
+身份密钥保存在 identity.json; 删除它会生成新身份 (等于换了个人)。""").format(self.svc.data_dir)),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], justify="left",
                  anchor="w").pack(fill="x", pady=(10, 8))
 
@@ -2284,23 +2320,39 @@ class SettingsDialog:
         for contact in self._blocked:
             self.blocked_list.insert("end", f" {contact.name}   ({contact.fingerprint})")
         if not self._blocked:
-            self.blocked_list.insert("end", " (没有封禁任何人)")
+            self.blocked_list.insert("end", t(" (没有封禁任何人)"))
 
     def save_name(self) -> None:
         try:
             self.svc.set_name(self.name_var.get())
         except ValueError as exc:
-            messagebox.showwarning("昵称", str(exc), parent=self.win)
+            messagebox.showwarning(t("昵称"), str(exc), parent=self.win)
             return
         try:
-            self.app.master_window.title(f"局域网聊天 -- {self.svc.name}")
+            self.app.master_window.title(t("局域网聊天 -- {0}").format(self.svc.name))
         except tk.TclError:
             pass
 
     def copy_fingerprint(self) -> None:
         self.win.clipboard_clear()
         self.win.clipboard_append(self.svc.fingerprint)
-        messagebox.showinfo("指纹", "已复制到剪贴板", parent=self.win)
+        messagebox.showinfo(t("指纹"), t("已复制到剪贴板"), parent=self.win)
+
+    def apply_language(self) -> None:
+        """保存界面语言。**重启后生效** (运行时重建整棵控件树风险太大, 见 service.set_language)。"""
+        name = self.lang_var.get()
+        code = next((item for item in self._lang_codes
+                     if i18n.display_name(item) == name), None)
+        if code is None:
+            return
+        self.svc.set_language(code)
+        if code == i18n.current_language():
+            messagebox.showinfo(t("界面语言"), t("已经是这个语言了, 不用重启。"), parent=self.win)
+            return
+        messagebox.showinfo(
+            t("界面语言"),
+            t("已保存: 界面语言改成 {0}。重启程序后生效。").format(i18n.display_name(code)),
+            parent=self.win)
 
     def toggle_discoverable(self) -> None:
         """隐身开关: 关掉后不广播、不回应单播探测 (别人搜不到我)。"""
@@ -2308,13 +2360,13 @@ class SettingsDialog:
         self.svc.set_discoverable(value)
         if not value:
             messagebox.showinfo(
-                "隐身",
-                "已关掉『允许被自动搜索』:\n"
-                "• 别人在『局域网中的人』里看不到你;\n"
-                "• 别人用『手动添加』只填 IP 也探测不到你;\n"
-                f"• 别人只能填 `你的IP:{self.svc.tcp_port}` 直接加你"
-                "(端口在设置里能看到, 也可以在下面固定一个, 免得重启后变了)。\n\n"
-                "你自己仍然能看到别人、也能正常聊天。",
+                t("隐身"),
+                t("""已关掉『允许被自动搜索』:
+• 别人在『局域网中的人』里看不到你;
+• 别人用『手动添加』只填 IP 也探测不到你;
+• 别人只能填 `你的IP:{0}` 直接加你(端口在设置里能看到, 也可以在下面固定一个, 免得重启后变了)。
+
+你自己仍然能看到别人、也能正常聊天。""").format(self.svc.tcp_port),
                 parent=self.win)
 
     def apply_tcp_port(self) -> None:
@@ -2322,44 +2374,49 @@ class SettingsDialog:
         try:
             value = int(self.port_var.get().strip() or "0")
         except ValueError:
-            messagebox.showwarning("本机端口", "请填数字: 0 = 每次随机, 或 1024~65535",
+            messagebox.showwarning(t("本机端口"), t("请填数字: 0 = 每次随机, 或 1024~65535"),
                                    parent=self.win)
             return
         if not self.svc.set_tcp_port(value):
             return
         messagebox.showinfo(
-            "本机端口",
-            (f"已保存: 本机端口固定为 {value}\n重启程序后生效。\n\n"
-             f"手动添加时让对方填: 你的IP:{value}") if value else
-            "已保存: 本机端口改回自动分配 (每次启动随机)。重启程序后生效。",
+            t("本机端口"),
+            (t("""已保存: 本机端口固定为 {0}
+重启程序后生效。
+
+手动添加时让对方填: 你的IP:{1}""").format(value, value)) if value else
+            t("已保存: 本机端口改回自动分配 (每次启动随机)。重启程序后生效。"),
             parent=self.win)
 
     def choose_download_dir(self) -> None:
         """改接收目录: 所有收到的文件都存这里。"""
-        path = filedialog.askdirectory(parent=self.win, title="选择接收目录",
+        path = filedialog.askdirectory(parent=self.win, title=t("选择接收目录"),
                                        initialdir=self.svc.download_dir or None)
         if not path:
             return
         if self.svc.set_download_dir(path):
             self.dir_label.configure(text=self.svc.download_dir, fg=C["text"])
         else:
-            messagebox.showwarning("接收目录", "这个目录不能用 (没有写权限?), 换一个试试。",
+            messagebox.showwarning(t("接收目录"), t("这个目录不能用 (没有写权限?), 换一个试试。"),
                                    parent=self.win)
 
     def use_system_download_dir(self) -> None:
         """一键回到默认: 系统的『下载』目录 (不用去删 .lanchat 里的 settings.json)。"""
         target = default_download_dir()
         if os.path.abspath(target) == os.path.abspath(self.svc.download_dir):
-            messagebox.showinfo("接收目录", f"现在用的就是系统下载目录:\n{target}",
+            messagebox.showinfo(t("接收目录"), t("""现在用的就是系统下载目录:
+{0}""").format(target),
                                 parent=self.win)
             return
         if self.svc.set_download_dir(target):
             self.dir_label.configure(text=self.svc.download_dir, fg=C["text"])
-            messagebox.showinfo("接收目录", f"已改回系统下载目录:\n{self.svc.download_dir}",
+            messagebox.showinfo(t("接收目录"), t("""已改回系统下载目录:
+{0}""").format(self.svc.download_dir),
                                 parent=self.win)
         else:
-            messagebox.showwarning("接收目录", f"系统下载目录不可用 (没有写权限?):\n{target}\n"
-                                               "可以点『改目录…』自己挑一个。", parent=self.win)
+            messagebox.showwarning(t("接收目录"), t("""系统下载目录不可用 (没有写权限?):
+{0}
+可以点『改目录…』自己挑一个。""").format(target), parent=self.win)
 
     def open_download_dir(self) -> None:
         self.app._reveal_path(os.path.join(self.svc.download_dir, "."))
@@ -2374,11 +2431,11 @@ class SettingsDialog:
         try:
             value = max(0, int(self.rekey_var.get()))
         except (TypeError, ValueError):
-            messagebox.showwarning("密钥轮换", "请填数字", parent=self.win)
+            messagebox.showwarning(t("密钥轮换"), t("请填数字"), parent=self.win)
             return
         self.svc.set_rekey_every(value)
-        messagebox.showinfo("密钥轮换",
-                            f"已设置为每 {value} 条消息轮换一次" if value else "已关闭密钥轮换",
+        messagebox.showinfo(t("密钥轮换"),
+                            t("已设置为每 {0} 条消息轮换一次").format(value) if value else t("已关闭密钥轮换"),
                             parent=self.win)
 
     def unblock_selected(self) -> None:
@@ -2392,7 +2449,7 @@ class SettingsDialog:
             name = contact.name
             if self.svc.unblock(contact.peer_id):
                 messagebox.showinfo(
-                    "解除封禁",
+                    t("解除封禁"),
                     unblock_text(name, True, was_friend,
                                  self.svc.has_question_for(contact.peer_id)),
                     parent=self.win)
@@ -2407,34 +2464,34 @@ class SetQuestionDialog:
         self.svc = app.service
         self.contact = contact
         self.win = tk.Toplevel(app)
-        self.win.title(f"给 {contact.name} 设置验证问题")
+        self.win.title(t("给 {0} 设置验证问题").format(contact.name))
         self.win.configure(bg=C["panel"])
         self.win.geometry("540x340")
         self.win.transient(app)
 
         frame = tk.Frame(self.win, bg=C["panel"], padx=18, pady=16)
         frame.pack(fill="both", expand=True)
-        tk.Label(frame, text="对方想加你为好友时, 必须先答对这道题",
+        tk.Label(frame, text=t("对方想加你为好友时, 必须先答对这道题"),
                  font=FONT_BOLD, bg=C["panel"], fg=C["text"]).pack(anchor="w")
-        tk.Label(frame, text=("答案只在本机参与哈希计算, 不会发送给对方; 每次提问都用新的随机数, "
-                              "所以抓包也无法重放旧答案。"),
+        tk.Label(frame, text=(t("答案只在本机参与哈希计算, 不会发送给对方; 每次提问都用新的随机数, "
+                              "所以抓包也无法重放旧答案。")),
                  font=FONT_SMALL, bg=C["panel"], fg=C["muted"], wraplength=470,
                  justify="left").pack(anchor="w", pady=(4, 10))
 
-        tk.Label(frame, text="问题", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(frame, text=t("问题"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(anchor="w")
         self.question_var = tk.StringVar(master=self.win,
                                          value=app.service.question_of(contact.peer_id))
         tk.Entry(frame, textvariable=self.question_var, font=FONT, relief="flat",
                  bg=C["bg"]).pack(fill="x", ipady=5)
-        tk.Label(frame, text="答案", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(frame, text=t("答案"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(anchor="w", pady=(10, 0))
         self.answer_var = tk.StringVar(master=self.win)
         tk.Entry(frame, textvariable=self.answer_var, font=FONT, relief="flat",
                  bg=C["bg"], show="●").pack(fill="x", ipady=5)
         row = tk.Frame(frame, bg=C["panel"])
         row.pack(fill="x", pady=(10, 0))
-        tk.Label(row, text="答错上限", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(row, text=t("答错上限"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
         self.attempts_var = tk.StringVar(
             master=self.win,
@@ -2443,14 +2500,14 @@ class SetQuestionDialog:
                       else DEFAULT_MAX_ANSWER_ATTEMPTS))
         tk.Spinbox(row, from_=1, to=10, width=4, textvariable=self.attempts_var,
                    font=FONT_SMALL).pack(side="left", padx=6)
-        tk.Label(row, text="(到了就自动封禁)", font=FONT_SMALL, bg=C["panel"],
+        tk.Label(row, text=t("(到了就自动封禁)"), font=FONT_SMALL, bg=C["panel"],
                  fg=C["muted"]).pack(side="left")
 
         buttons = tk.Frame(frame, bg=C["panel"])
         buttons.pack(fill="x", pady=(16, 0))
-        _btn(buttons, "保存", self.save, "primary", width=8).pack(side="right")
-        _btn(buttons, "取消设题", self.clear, "ghost", width=10).pack(side="right", padx=8)
-        _btn(buttons, "关闭", lambda: _close_toplevel(self.win), "ghost",
+        _btn(buttons, t("保存"), self.save, "primary", width=8).pack(side="right")
+        _btn(buttons, t("取消设题"), self.clear, "ghost", width=10).pack(side="right", padx=8)
+        _btn(buttons, t("关闭"), lambda: _close_toplevel(self.win), "ghost",
              width=6).pack(side="left")
 
     def save(self) -> None:
@@ -2458,8 +2515,8 @@ class SetQuestionDialog:
         answer = self.answer_var.get().strip()
         if not question or not answer:
             missing = "、".join(part for part, value in
-                                (("『问题』", question), ("『答案』", answer)) if not value)
-            messagebox.showwarning("验证问题", f"{missing} 还没有填 (想取消设题请点『取消设题』)",
+                                ((t("『问题』"), question), (t("『答案』", answer))) if not value)
+            messagebox.showwarning(t("验证问题"), t("{0} 还没有填 (想取消设题请点『取消设题』)").format(missing),
                                    parent=self.win)
             return
         try:
@@ -2484,7 +2541,7 @@ def make_self_test_service(who: str, index: int, base: str, shared_downloads: st
                            args: argparse.Namespace) -> ChatService:
     """自测模式里的一个实例 (抽成函数是为了让测试能直接检查它的配置)。"""
     return ChatService(
-        name=f"{who}(本机)",
+        name=t("{0}(本机)").format(who),
         data_dir=os.path.join(base, who),
         download_dir=os.path.join(shared_downloads, who),
         # 两个实例**都**开发现层: 以前只让"甲"发广播、乙连收都不收, 结果
@@ -2548,13 +2605,10 @@ def selftest_connect_pair(services: List[ChatService], grace: float = SELFTEST_D
 def selftest_peer_note(info: Dict[str, Any], other_name: str) -> str:
     """自测窗口里显示的"我是怎么看到对方的"说明 (顺便教怎么测隐身)。"""
     if info["source"] == "discovery":
-        return (f"🧪 我是靠**广播发现**看到「{other_name}」的 ({info['address']})。\n"
-                "    想验证『隐身』: 在『⚙ 设置』里关掉『允许被自动搜索』, 然后打开对面窗口的"
-                "『➕ 添加联系人』—— 大约 12 秒后(离线超时)我会从那个列表里消失, 重新打开又会出现。")
-    return (f"⚠ 这条网络里**广播不通**(或者被防火墙/安全软件拦了 UDP), 我已经用内部登记兜底"
-            f"看到「{other_name}」({info['address']})。\n"
-            "    两个窗口照样能加好友 / 聊天 / 传文件, 但『隐身』在自测里看不出效果 —— "
-            "隐身要靠广播, 请在两台真机上验证。")
+        return (t("""🧪 我是靠**广播发现**看到「{0}」的 ({1})。
+    想验证『隐身』: 在『⚙ 设置』里关掉『允许被自动搜索』, 然后打开对面窗口的『➕ 添加联系人』—— 大约 12 秒后(离线超时)我会从那个列表里消失, 重新打开又会出现。""").format(other_name, info['address']))
+    return (t("""⚠ 这条网络里**广播不通**(或者被防火墙/安全软件拦了 UDP), 我已经用内部登记兜底看到「{0}」({1})。
+    两个窗口照样能加好友 / 聊天 / 传文件, 但『隐身』在自测里看不出效果 —— 隐身要靠广播, 请在两台真机上验证。""").format(other_name, info['address']))
 
 
 def launch_self_test(args: argparse.Namespace) -> None:
@@ -2572,7 +2626,7 @@ def launch_self_test(args: argparse.Namespace) -> None:
     shared_downloads = args.download_dir or os.path.join(
         os.path.expanduser("~"), "Downloads", "lanchat-自测")
 
-    startup_log.step(f"自测模式: 准备两个完整实例 (数据目录 {base})")
+    startup_log.step(t("自测模式: 准备两个完整实例 (数据目录 {0})").format(base))
     services: List[ChatService] = []
     apps: List["ChatApp"] = []
     windows: List[tk.Tk] = []
@@ -2588,12 +2642,12 @@ def launch_self_test(args: argparse.Namespace) -> None:
     half_w = max(480, min(900, (screen_w - 40) // 2))
     offset = half_w // 2 + 8
 
-    for index, who in enumerate(("甲", "乙")):
+    for index, who in enumerate((t("甲"), t("乙"))):
         service = make_self_test_service(who, index, base, shared_downloads, args)
         services.append(service)
 
         window = tk.Tk()
-        window.title(f"[自测 {who}] 局域网聊天 {__version__} — {service.name}")
+        window.title(t("[自测 {0}] 局域网聊天 {1} — {2}").format(who, __version__, service.name))
         geometry = _shift_geometry(window, half_w, 620, -offset if index == 0 else offset, 0)
         window.geometry(geometry)
         window.minsize(640, 460)
@@ -2613,7 +2667,7 @@ def launch_self_test(args: argparse.Namespace) -> None:
         if closing["done"]:
             return
         closing["done"] = True
-        startup_log.step("自测模式: 关闭两个实例")
+        startup_log.step(t("自测模式: 关闭两个实例"))
         for svc in services:
             try:
                 svc.stop()
@@ -2628,12 +2682,8 @@ def launch_self_test(args: argparse.Namespace) -> None:
     for index, (window, service) in enumerate(zip(windows, services)):
         app = ChatApp(window, service, args, own_service=False, on_close_hook=close_all)
         apps.append(app)
-        app._append("sys", "🧪 自测模式: 这台机器上同时跑着两个完整实例 (都是正常窗口)。")
-        app._append("sys", f"另一个窗口是「{services[1 - index].name}」, "
-                           f"正在等广播发现它 (最多 {SELFTEST_DISCOVERY_GRACE:.0f} 秒, "
-                           "广播不通就自动兜底); 找到后"
-                           "在那边的『➕ 添加联系人』里能看到我 —— "
-                           "加好友 / 验证问题 / 聊天 / 传文件都按平时那样操作。")
+        app._append("sys", t("🧪 自测模式: 这台机器上同时跑着两个完整实例 (都是正常窗口)。"))
+        app._append("sys", t("另一个窗口是「{0}」, 正在等广播发现它 (最多 {1:.0f} 秒, 广播不通就自动兜底); 找到后在那边的『➕ 添加联系人』里能看到我 —— 加好友 / 验证问题 / 聊天 / 传文件都按平时那样操作。").format(services[1 - index].name, SELFTEST_DISCOVERY_GRACE))
 
     deadline = {"at": time.time() + SELFTEST_DISCOVERY_GRACE}
 
@@ -2654,9 +2704,8 @@ def launch_self_test(args: argparse.Namespace) -> None:
             return
         for index, info in enumerate(selftest_connect_pair(services, grace=0.0)):
             other = services[1 - index]
-            where = "广播发现" if info["source"] == "discovery" else "内部登记兜底"
-            startup_log.step(f"自测模式: {services[index].name} 看到的 {other.name} "
-                             f"= {info['address'] or '⚠ 没有登记上'} (来源: {where})")
+            where = t("广播发现") if info["source"] == "discovery" else t("内部登记兜底")
+            startup_log.step(t("自测模式: {0} 看到的 {1} = {2} (来源: {3})").format(services[index].name, other.name, info['address'] or t('⚠ 没有登记上'), where))
             try:
                 apps[index]._append("sys", selftest_peer_note(info, other.name))
             except tk.TclError:
@@ -2666,7 +2715,7 @@ def launch_self_test(args: argparse.Namespace) -> None:
 
     # 先把"窗口已显示"写进日志, 再去抢前台
     # 外部脚本 (含启动回归测试) 看到窗口后可能马上读日志, 顺序反了就抓不到这行。
-    startup_log.step("自测模式: 两个窗口已显示, 进入事件循环")
+    startup_log.step(t("自测模式: 两个窗口已显示, 进入事件循环"))
     for window in windows:
         _bring_to_front(window)
     windows[0].mainloop()
@@ -2723,6 +2772,30 @@ def _shift_geometry(window: tk.Misc, width: int, height: int, dx: int, dy: int) 
     return f"{width}x{height}+{x}+{y}"
 
 
+def _apply_cli_language(argv: Optional[List[str]] = None) -> str:
+    """从命令行/设置/系统语言定下界面语言 (幂等)。
+
+    入口 chat_gui.py 在建界面之前已经设过一次 (它必须先设, 否则连"缺少 tkinter"这类
+    启动失败提示都是中文); 这里再算一次是为了 `python lanchat/gui.py` 和测试直接调用
+    `gui.main()` 的场合。优先级: `--lang` > settings.json 里存过的 > 系统语言。
+    """
+    items = [str(item) for item in (argv if argv is not None else [])]
+    lang, data_dir = "", ""
+    for index, item in enumerate(items):
+        if item == "--lang" and index + 1 < len(items):
+            lang = items[index + 1]
+        elif item.startswith("--lang="):
+            lang = item.split("=", 1)[1]
+        elif item == "--data-dir" and index + 1 < len(items):
+            data_dir = items[index + 1]
+        elif item.startswith("--data-dir="):
+            data_dir = item.split("=", 1)[1]
+    from .identity import resolve_app_dir
+
+    target = (data_dir or "").strip() or resolve_app_dir()
+    return i18n.set_language(i18n.resolve_initial_language(lang, target))
+
+
 def prepare(argv: Optional[List[str]] = None):
     """建窗口 + 建服务 + 完成首次昵称设置。
 
@@ -2730,57 +2803,57 @@ def prepare(argv: Optional[List[str]] = None):
     卡在哪一步一目了然。
     """
     parser = argparse.ArgumentParser(prog="chat_gui.py",
-                                     description="局域网聊天工具 (微信风格界面)")
-    parser.add_argument("--name", "-n", default="", help="昵称 (不填则弹窗询问)")
-    parser.add_argument("--port", type=int, default=DEFAULT_TCP_PORT, help="本机 TCP 端口, 0=自动")
+                                     description=t("局域网聊天工具 (微信风格界面)"))
+    parser.add_argument("--name", "-n", default="", help=t("昵称 (不填则弹窗询问)"))
+    parser.add_argument("--port", type=int, default=DEFAULT_TCP_PORT, help=t("本机 TCP 端口, 0=自动"))
     parser.add_argument("--discovery-port", type=int, default=DEFAULT_DISCOVERY_PORT,
-                        help=f"UDP 自动发现端口 (默认 {DEFAULT_DISCOVERY_PORT})")
-    parser.add_argument("--download-dir", default="", help="接收文件的保存目录")
-    parser.add_argument("--data-dir", default="", help="身份/好友数据的保存目录")
-    parser.add_argument("--auto-accept", action="store_true", help="自动接收文件")
-    parser.add_argument("--no-auto-connect", action="store_true", help="不自动连接好友")
+                        help=t("UDP 自动发现端口 (默认 {0})").format(DEFAULT_DISCOVERY_PORT))
+    parser.add_argument("--download-dir", default="", help=t("接收文件的保存目录"))
+    parser.add_argument("--data-dir", default="", help=t("身份/好友数据的保存目录"))
+    parser.add_argument("--lang", default="", metavar=t("语言代码"),
+                        help=t("界面语言: {0} (默认跟随系统语言, 也可以在设置里改)").format(
+                            " / ".join(i18n.available())))
+    parser.add_argument("--auto-accept", action="store_true", help=t("自动接收文件"))
+    parser.add_argument("--no-auto-connect", action="store_true", help=t("不自动连接好友"))
     parser.add_argument("--no-focus", action="store_true",
-                        help="不要把窗口强制提到最前 (某些窗口管理器不喜欢)")
-    parser.add_argument("--rekey-after", type=int, default=30, metavar="条数",
-                        help="每收发多少条消息重新协商一次会话密钥 (0=关闭, 默认 30)")
-    parser.add_argument("--window-test", type=int, default=0, metavar="秒",
-                        help="只弹一个测试窗口, 显示指定秒数后自动关闭 (用于确认窗口能不能显示)")
+                        help=t("不要把窗口强制提到最前 (某些窗口管理器不喜欢)"))
+    parser.add_argument("--rekey-after", type=int, default=30, metavar=t("条数"),
+                        help=t("每收发多少条消息重新协商一次会话密钥 (0=关闭, 默认 30)"))
+    parser.add_argument("--window-test", type=int, default=0, metavar=t("秒"),
+                        help=t("只弹一个测试窗口, 显示指定秒数后自动关闭 (用于确认窗口能不能显示)"))
     parser.add_argument("--version", action="version", version=f"lanchat {__version__}")
     args = parser.parse_args(argv)
 
     from . import startup_log
 
     if args.window_test:
-        startup_log.step(f"窗口测试: 打开一个标题为『窗口测试』的窗口, {args.window_test} 秒后自动关闭…")
+        startup_log.step(t("窗口测试: 打开一个标题为『窗口测试』的窗口, {0} 秒后自动关闭…").format(args.window_test))
         window = tk.Tk()
-        window.title("窗口测试 —— 看到这个窗口就说明图形界面正常")
+        window.title(t("窗口测试 —— 看到这个窗口就说明图形界面正常"))
         window.geometry(_center_geometry(window, 520, 260))
-        tk.Label(window, text="如果你能看到这个窗口,\n说明图形界面本身没有问题。",
+        tk.Label(window, text=t("如果你能看到这个窗口,\n说明图形界面本身没有问题。"),
                  font=(FONT[0], 13), bg=C["panel"], fg=C["text"], justify="center").pack(
             expand=True, fill="both")
-        tk.Label(window, text=f"{args.window_test} 秒后自动关闭", font=FONT_SMALL,
+        tk.Label(window, text=t("{0} 秒后自动关闭").format(args.window_test), font=FONT_SMALL,
                  bg=C["panel"], fg=C["muted"]).pack(pady=(0, 12))
         _bring_to_front(window)
-        startup_log.step(f"测试窗口已显示: viewable={window.winfo_viewable()} "
-                         f"geometry={window.winfo_geometry()}")
+        startup_log.step(t("测试窗口已显示: viewable={0} geometry={1}").format(window.winfo_viewable(), window.winfo_geometry()))
         window.after(int(args.window_test * 1000), window.destroy)
         window.mainloop()
-        startup_log.step("测试窗口已关闭 —— 图形界面工作正常")
+        startup_log.step(t("测试窗口已关闭 —— 图形界面工作正常"))
         return window, None, args, True  # type: ignore[return-value]
 
-    startup_log.step("创建 Tk 主窗口…")
+    startup_log.step(t("创建 Tk 主窗口…"))
     root = tk.Tk()
-    root.title(f"局域网聊天 {__version__}")
+    root.title(t("局域网聊天 {0}").format(__version__))
     root.geometry(_center_geometry(root, 1000, 660))
     root.minsize(820, 520)
     root.update_idletasks()
     root.deiconify()
     _bring_to_front(root)
-    startup_log.step(f"Tk 主窗口已创建 (Tk {root.tk.call('info', 'patchlevel')}, "
-                     f"屏幕 {root.winfo_screenwidth()}x{root.winfo_screenheight()}, "
-                     f"viewable={root.winfo_viewable()})")
+    startup_log.step(t("Tk 主窗口已创建 (Tk {0}, 屏幕 {1}x{2}, viewable={3})").format(root.tk.call('info', 'patchlevel'), root.winfo_screenwidth(), root.winfo_screenheight(), root.winfo_viewable()))
 
-    startup_log.step("初始化聊天服务 (身份密钥 / 数据目录)…")
+    startup_log.step(t("初始化聊天服务 (身份密钥 / 数据目录)…"))
     # 网卡枚举 (Windows 上是一次 ipconfig 子进程, 打包后实测 2.5 秒) 先在后台跑起来:
     # 用户慢慢填昵称的这几秒足够它跑完, 之后建发现层/显示本机地址就一点都不卡了。
     from .discovery import warm_interfaces_async
@@ -2796,38 +2869,38 @@ def prepare(argv: Optional[List[str]] = None):
         data_dir=args.data_dir or None,
         rekey_every=args.rekey_after,
     )
-    startup_log.step(f"服务就绪: 昵称 {service.name} | 数据目录 {service.data_dir}")
+    startup_log.step(t("服务就绪: 昵称 {0} | 数据目录 {1}").format(service.name, service.data_dir))
 
     # 第一次打开 (或还没设置过昵称): 在主窗口里先设置昵称
-    need_setup = (not args.name.strip()) or service.name == "未命名用户"
+    need_setup = (not args.name.strip()) or service.name == t("未命名用户")
     if need_setup:
-        startup_log.step("第一次使用: 在主窗口里显示『设置昵称』(填完点开始使用)…")
+        startup_log.step(t("第一次使用: 在主窗口里显示『设置昵称』(填完点开始使用)…"))
         finished = tk.BooleanVar(master=root, value=False)
         setup = NicknameDialog(root, service, on_done=lambda _ok: finished.set(True))
         root.wait_variable(finished)     # 等用户在界面上操作, 事件循环照常跑
         if not setup.ok:
-            startup_log.step("用户取消了昵称设置, 退出")
+            startup_log.step(t("用户取消了昵称设置, 退出"))
             service.stop()
             root.destroy()
             return root, service, args, True
         setup.close()
-        startup_log.step(f"昵称设置完成: {service.name}")
+        startup_log.step(t("昵称设置完成: {0}").format(service.name))
 
-    startup_log.step("构建主界面…")
-    root.title(f"局域网聊天 {__version__} — {service.name}")
+    startup_log.step(t("构建主界面…"))
+    root.title(t("局域网聊天 {0} — {1}").format(__version__, service.name))
     root.geometry(_center_geometry(root, 1000, 660))
     ChatApp(root, service, args, own_service=True)
     if not args.no_focus:
         _bring_to_front(root)
-    startup_log.step(f"主界面已显示 (geometry {root.winfo_geometry()}, "
-                     f"viewable={root.winfo_viewable()}), 进入事件循环")
-    print(f"窗口应该已经出现: 标题『局域网聊天 {__version__} — {service.name}』")
-    print("如果看不到窗口, 检查任务栏 (可能被别的窗口挡住), 或换普通终端重跑。")
+    startup_log.step(t("主界面已显示 (geometry {0}, viewable={1}), 进入事件循环").format(root.winfo_geometry(), root.winfo_viewable()))
+    print(t("窗口应该已经出现: 标题『局域网聊天 {0} — {1}』").format(__version__, service.name))
+    print(t("如果看不到窗口, 检查任务栏 (可能被别的窗口挡住), 或换普通终端重跑。"))
     return root, service, args, False
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    _apply_cli_language(args)        # 必须在建任何界面/写任何提示之前
     if "--self-test" in args:
         parser = argparse.ArgumentParser(prog="chat_gui.py --self-test")
         parser.add_argument("--discovery-port", type=int, default=DEFAULT_DISCOVERY_PORT)
@@ -2838,6 +2911,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--no-focus", action="store_true")
         parser.add_argument("--name", "-n", default="")
         parser.add_argument("--port", type=int, default=0)
+        parser.add_argument("--lang", default="")
         parser.add_argument("--version", action="version", version=f"lanchat {__version__}")
         ns, _unknown = parser.parse_known_args(args)
         ns.self_test = True          # 界面据此显示"🧪 掉线 6 秒"这类自测按钮
@@ -2869,9 +2943,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         except OSError:
             pass
         try:
-            messagebox.showerror("程序出错", f"发生异常, 详情见:\n"
-                                            f"{os.path.join(service.data_dir, 'last-run.log')}\n\n"
-                                            f"{detail.splitlines()[-1]}")
+            messagebox.showerror(t("程序出错"), t("""发生异常, 详情见:
+{0}
+
+{1}""").format(os.path.join(service.data_dir, 'last-run.log'), detail.splitlines()[-1]))
         except Exception:  # noqa: BLE001
             pass
     return 0

@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from .i18n import t
 import json
 import os
 import re
@@ -86,8 +87,7 @@ def interface_pairs(max_age: float = IFACE_CACHE_SECONDS) -> List[Tuple[str, Opt
             try:
                 from . import startup_log
 
-                startup_log.step(f"⚠ 枚举网卡用了 {elapsed:.2f} 秒 "
-                                 f"(ipconfig 慢成这样时不能在界面线程里做)")
+                startup_log.step(t("⚠ 枚举网卡用了 {0:.2f} 秒 (ipconfig 慢成这样时不能在界面线程里做)").format(elapsed))
             except Exception:  # noqa: BLE001 - 记日志失败不能影响发现
                 pass
 
@@ -397,8 +397,9 @@ class DiscoveryService:
         with self._lock:
             return self._peers.get(peer_id)
 
-    def add_manual(self, host: str, port: int, name: str = "手动添加") -> DiscoveredPeer:
+    def add_manual(self, host: str, port: int, name: str = "") -> DiscoveredPeer:
         """手动登记一个对端 (跨网段/广播不可达时使用)。"""
+        name = name or t("手动添加")
         peer = DiscoveredPeer(peer_id=f"manual:{host}:{port}", name=name, host=host, port=port,
                               manual=True)
         with self._lock:
@@ -538,7 +539,7 @@ class DiscoveryService:
         if not (0 < port < 65536):
             return
         peer_id = str(msg.get("id"))
-        name = str(msg.get("name") or "匿名")
+        name = str(msg.get("name") or t("匿名"))
 
         if msg.get("k") == "bye":
             self._mark_lost(peer_id)

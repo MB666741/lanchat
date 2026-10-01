@@ -23,7 +23,10 @@ a = Analysis(
     hiddenimports=["lanchat", "lanchat.gui", "lanchat.service", "lanchat.crypto",
                    "lanchat.connection", "lanchat.discovery", "lanchat.identity",
                    "lanchat.protocol", "lanchat.console", "lanchat.winfocus",
-                   "lanchat.startup_log", "lanchat.constants"],
+                   "lanchat.startup_log", "lanchat.constants", "lanchat.i18n",
+                   # 词条目录是 importlib 按表动态导入的, PyInstaller 静态分析看不到 —— 必须列出来,
+                   # 否则打包后一切到英文/繁体就 ModuleNotFoundError (界面直接退回中文)。
+                   "lanchat.locales", "lanchat.locales.en", "lanchat.locales.zh_hant"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

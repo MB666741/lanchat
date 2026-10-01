@@ -19,13 +19,28 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 
 ## 下载与安装
 
-1. 在 [Releases](../../releases/latest) 页面下载 `LanChat-2.2.0-win64.zip`。中国用户如果下载过慢可以使用[github加速](https://gh-proxy.com/)
+> **版本说明**：预编译的 Windows 免安装包停留在 **2.2.0**，从 **2.3.0** 起仓库只发布源码
+> （见 [Releases](../../releases)）。本文档描述的是当前源码（2.3.0），其中的界面语言功能
+> 只有方式二才有。
+
+**方式一：使用预编译包（2.2.0，无多语言）**
+
+1. 在 [Releases](../../releases) 页面下载 `LanChat-2.2.0-win64.zip`。
 2. 将压缩包**完整解压**到任意目录。程序以文件夹形式分发，`LanChat.exe` 依赖同级目录下的
    `_internal\`，请勿单独复制可执行文件。
-3. 双击 `LanChat.exe`，填写昵称后即可使用。身份密钥与配置保存在数据目录
-   `%USERPROFILE%\.lanchat`。
+3. 双击 `LanChat.exe`，填写昵称后即可使用。
 
-> 本程序未进行代码签名，Windows SmartScreen 可能提示「未知发布者」。选择「仍要运行」即可。
+**方式二：从源码运行，或自行打包（2.3.0）**
+
+```bash
+pip install -r requirements.txt        # 只有 cryptography 一个第三方依赖
+python chat_gui.py                     # 直接运行
+
+pyinstaller lanchat.spec --noconfirm --clean   # 或打包成免安装文件夹 → dist\LanChat\
+```
+
+> 程序未进行代码签名，Windows SmartScreen 可能提示「未知发布者」；选择「仍要运行」即可。
+> 身份密钥与配置保存在数据目录 `%USERPROFILE%\.lanchat`。
 
 ## 使用流程
 
@@ -52,6 +67,7 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 | 端到端加密 | 每台设备一对长期身份密钥；每次连接现场协商会话密钥，报文使用 AES-256-GCM；每 30 条消息自动轮换密钥，文件传输前后各轮换一次 |
 | 隐身模式 | 关闭「允许被自动搜索」后不再广播、不回应探测请求，仅接受对方手动填写 `IP:TCP端口` 发起的连接 |
 | 会话记录 | 仅保存在内存中，程序退出即清除，不写入磁盘；一方仍在线时，对端重新上线可获得缺失片段的补发 |
+| 界面语言 | 简体中文 / 繁體中文 / English 三种界面语言，首次启动跟随系统语言，可在设置中切换（重启生效），也可用 `--lang` 临时指定 |
 | 自测模式 | 单机即可验证全部流程：`--self-test` 打开两个真实窗口，并提供「掉线重连」演练按钮 |
 
 ## 界面结构
@@ -66,6 +82,22 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 │           │ [输入框]                           [文件] [发送] │
 └───────────┴──────────────────────────────────────────────────┘
 ```
+
+## 界面语言
+
+界面内置三种语言：**简体中文 / 繁體中文 / English**。
+
+* 首次启动跟随 Windows 的系统语言（英文系统直接显示英文，繁体系统显示繁體中文）。
+* 之后在「设置」→「界面语言」下拉框中选择，点「应用」保存，**重启程序后生效**。
+* 也可以临时指定而不修改设置：命令行加 `--lang`，例如 `LanChat.exe --lang en`。
+  语言代码为 `zh-Hans`、`zh-Hant`、`en`。
+
+英文界面：
+
+![英文界面](docs/screenshot-ui-en.png)
+
+翻译覆盖图形界面、服务/连接/加密层的用户可见提示，以及 `--diagnose` 自检报告；
+代码注释、启动日志与开发文档仍为中文。
 
 ## 安全设计与防护措施
 
@@ -150,6 +182,8 @@ lanchat/                核心实现
   connection.py         加密连接、密钥轮换、文件传输
   crypto.py             密钥协商、报文加解密、长度混淆
   identity.py           身份密钥、设备标识与指纹
+  i18n.py               多语言框架（词条查表、系统语言探测、语言归一化）
+  locales/              词条目录：en.py（英语）、zh_hant.py（繁體中文）
   protocol.py           报文编解码
   service.py            会话服务与事件分发
   gui.py                Tkinter 图形界面
@@ -158,6 +192,7 @@ lanchat/                核心实现
   winfocus.py           窗口置顶与焦点处理
 chat_gui.py             图形界面入口
 chatgui.py              同名别名入口（不带下划线也能启动）
+tools/                  开发工具：i18n_extract.py（抽词条）、i18n_check.py（校验词条目录）
 lanchat.spec            PyInstaller 打包配置
 使用说明.txt             随发行包分发的简要说明
 docs/开发文档.md         设计原理、协议、加密细节与修复记录
@@ -184,6 +219,7 @@ pyinstaller lanchat.spec --noconfirm   # 自行打包，输出到 dist\LanChat\
 | `--data-dir` | 身份与好友数据的保存目录 |
 | `--download-dir` | 接收文件的保存目录 |
 | `--rekey-after` | 每收发多少条消息轮换一次会话密钥，0 表示关闭，默认 30 |
+| `--lang` | 指定界面语言：`zh-Hans` / `zh-Hant` / `en`（默认跟随系统语言） |
 | `--auto-accept` | 自动接收文件，不逐个询问 |
 | `--no-auto-connect` | 不自动连接已添加的好友 |
 | `--no-focus` | 不强制将窗口置于最前 |

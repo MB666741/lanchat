@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from .i18n import t
 import os
 import sys
 import time
@@ -80,7 +81,7 @@ def step(message: str) -> None:
 def dump_exception(context: str) -> str:
     """把异常详情写进日志并返回文本。"""
     detail = traceback.format_exc()
-    step(f"!! {context} 失败")
+    step(t("!! {0} 失败").format(context))
     try:
         with open(log_file(), "a", encoding="utf-8") as fh:
             fh.write(detail + "\n")

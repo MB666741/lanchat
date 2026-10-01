@@ -23,8 +23,36 @@ from lanchat.console import configure_console  # noqa: E402
 configure_console()   # 必须最先做: 否则第一次打印特殊字符就会崩
 
 from lanchat import startup_log  # noqa: E402
+from lanchat.i18n import t  # noqa: E402
 
 EXIT_NEEDS_ENV = 2
+
+
+def _prescan_options(argv) -> dict:
+    """挑出"必须在建界面之前就知道"的参数: 界面语言和数据目录。"""
+    out = {"lang": "", "data_dir": ""}
+    items = list(argv or [])
+    for index, item in enumerate(items):
+        for flag, key in (("--lang", "lang"), ("--data-dir", "data_dir")):
+            if item == flag and index + 1 < len(items):
+                out[key] = items[index + 1]
+            elif item.startswith(flag + "="):
+                out[key] = item.split("=", 1)[1]
+    return out
+
+
+def setup_language(argv=None) -> str:
+    """定下界面语言: `--lang` > settings.json 里存过的 > 系统语言。
+
+    必须在 `check_environment()` **之前** 调用 —— 否则"缺少 cryptography"这类启动失败
+    提示会是中文, 恰恰是最需要英文用户看懂的时候。
+    """
+    from lanchat import i18n
+    from lanchat.identity import resolve_app_dir
+
+    options = _prescan_options(sys.argv[1:] if argv is None else argv)
+    data_dir = (options["data_dir"] or "").strip() or resolve_app_dir()
+    return i18n.set_language(i18n.resolve_initial_language(options["lang"], data_dir))
 
 
 def log(message: str) -> None:
@@ -38,28 +66,28 @@ def log_path() -> str:
 def _fail(title: str, hints: list) -> int:
     print()
     print("=" * 62)
-    print(f"启动失败: {title}")
+    print(t("启动失败: {0}").format(title))
     print("=" * 62)
     for hint in hints:
         print("  • " + hint)
     print()
-    log(f"启动失败: {title} | " + " / ".join(hints))
+    log(t("启动失败: {0} | ").format(title) + " / ".join(hints))
     return EXIT_NEEDS_ENV
 
 
 def check_environment() -> int:
     """启动前自检: 依赖与图形界面。返回 0 表示没问题。"""
     log(f"Python {sys.version.split()[0]} | {sys.executable}")
-    log(f"脚本目录 {_HERE} | 工作目录 {os.getcwd()}")
+    log(t("脚本目录 {0} | 工作目录 {1}").format(_HERE, os.getcwd()))
 
     try:
         import tkinter
         log(f"tkinter OK (Tk {tkinter.TkVersion})")
     except ImportError as exc:
-        return _fail(f"没有 tkinter 图形库 ({exc})", [
-            "Windows/macOS 官方 Python 自带 tkinter; 这个提示说明装的是精简版 Python",
-            "请到 python.org 重新安装 Python 并勾选 tcl/tk",
-            "Linux 上执行: sudo apt install python3-tk",
+        return _fail(t("没有 tkinter 图形库 ({0})").format(exc), [
+            t("Windows/macOS 官方 Python 自带 tkinter; 这个提示说明装的是精简版 Python"),
+            t("请到 python.org 重新安装 Python 并勾选 tcl/tk"),
+            t("Linux 上执行: sudo apt install python3-tk"),
         ])
 
     try:
@@ -67,9 +95,9 @@ def check_environment() -> int:
 
         log(f"cryptography {cryptography.__version__}")
     except ImportError as exc:
-        return _fail(f"缺少 cryptography 库 ({exc})", [
-            f"在本目录执行: {os.path.basename(sys.executable)} -m pip install -r requirements.txt",
-            "或者只装这一个包: python -m pip install cryptography",
+        return _fail(t("缺少 cryptography 库 ({0})").format(exc), [
+            t("在本目录执行: {0} -m pip install -r requirements.txt").format(os.path.basename(sys.executable)),
+            t("或者只装这一个包: python -m pip install cryptography"),
         ])
     return 0
 
@@ -108,7 +136,7 @@ def _read_settings(data_dir: str) -> dict:
 def diagnose(argv=None) -> int:
     """--diagnose: 只做检查并打印报告, 不打开窗口。"""
     print("=" * 62)
-    print("局域网聊天工具 —— 环境自检")
+    print(t("局域网聊天工具 —— 环境自检"))
     print("=" * 62)
     code = check_environment()
     if code != 0:
@@ -122,7 +150,10 @@ def diagnose(argv=None) -> int:
 
     options = _diagnose_options(argv)
     data_dir = (options["data_dir"] or "").strip() or resolve_app_dir()
-    print(f"  数据目录 : {data_dir}")
+    print(t("  数据目录 : {0}").format(data_dir))
+    from lanchat import i18n
+
+    print(t("  界面语言 : {0}").format(i18n.display_name(i18n.current_language())))
 
     saved = _read_settings(data_dir)
 
@@ -133,12 +164,12 @@ def diagnose(argv=None) -> int:
     if not wanted and saved.get("download_dir") and saved.get("download_dir_chosen"):
         wanted = str(saved["download_dir"])
     download_dir, warning = _prepare_dir(wanted or default_download_dir())
-    print(f"  接收目录 : {download_dir}")
+    print(t("  接收目录 : {0}").format(download_dir))
     if warning:
         print(f"             ⚠ {warning}")
 
-    print(f"  本机地址 : {', '.join(local_ipv4_addresses()) or '未知'}")
-    print(f"  广播地址 : {', '.join(broadcast_addresses())}")
+    print(t("  本机地址 : {0}").format(', '.join(local_ipv4_addresses()) or t('未知')))
+    print(t("  广播地址 : {0}").format(', '.join(broadcast_addresses())))
 
     try:
         disc_port = int(options["discovery_port"] or 0) or DEFAULT_DISCOVERY_PORT
@@ -148,103 +179,102 @@ def diagnose(argv=None) -> int:
     probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         probe.bind(("", disc_port))
-        print(f"  发现端口 : UDP {disc_port} 可用")
+        print(t("  发现端口 : UDP {0} 可用").format(disc_port))
     except OSError as exc:
-        print(f"  发现端口 : UDP {disc_port} 被占用 ({exc})")
-        print(f"             已经开着程序属正常; 想再开一个可以加 --discovery-port {disc_port + 1}")
+        print(t("  发现端口 : UDP {0} 被占用 ({1})").format(disc_port, exc))
+        print(t("             已经开着程序属正常; 想再开一个可以加 --discovery-port {0}").format(disc_port + 1))
     finally:
         probe.close()
 
     listener = socket.socket()
     try:
         listener.bind(("", 0))
-        print(f"  TCP 监听 : 可用 (随机端口示例 {listener.getsockname()[1]})")
+        print(t("  TCP 监听 : 可用 (随机端口示例 {0})").format(listener.getsockname()[1]))
     finally:
         listener.close()
 
     if saved:
         tcp_saved = saved.get("tcp_port", 0)
         hidden = saved.get("discoverable", True) is False
-        print(f"  已存设置 : 本机端口 {tcp_saved or '随机(每次启动可能不同)'}"
-              f" | 允许被自动搜索: {'否 (隐身中)' if hidden else '是'}")
+        print(t("  已存设置 : 本机端口 {0} | 允许被自动搜索: {1}").format(tcp_saved or t('随机(每次启动可能不同)'), t('否 (隐身中)') if hidden else t('是')))
 
     identity_path = os.path.join(data_dir, "identity.json")
     if os.path.isfile(identity_path):
-        identity, created = LocalIdentity.load_or_create(identity_path, "临时")
-        print(f"  身份密钥 : 已存在, 指纹 {fingerprint_of(identity.peer_id)}")
+        identity, created = LocalIdentity.load_or_create(identity_path, t("临时"))
+        print(t("  身份密钥 : 已存在, 指纹 {0}").format(fingerprint_of(identity.peer_id)))
         if created:
-            print("             ⚠ 原身份文件损坏, 已重新生成")
+            print(t("             ⚠ 原身份文件损坏, 已重新生成"))
     else:
-        print("  身份密钥 : 还没有, 首次启动时自动生成")
+        print(t("  身份密钥 : 还没有, 首次启动时自动生成"))
 
     # 真正建一个窗口看能不能显示 —— 区分"代码问题"和"环境显示不出窗口"
     print()
-    print("  窗口测试 : 正在创建测试窗口…")
+    print(t("  窗口测试 : 正在创建测试窗口…"))
     try:
         import tkinter as _tk
 
         window = _tk.Tk()
-        window.title("窗口测试")
+        window.title(t("窗口测试"))
         window.geometry("360x120+{}+{}".format(
             max(0, (window.winfo_screenwidth() - 360) // 2),
             max(0, (window.winfo_screenheight() - 120) // 3),
         ))
-        _tk.Label(window, text="能看到这个窗口吗?", bg="#ffffff").pack(expand=True)
+        _tk.Label(window, text=t("能看到这个窗口吗?"), bg="#ffffff").pack(expand=True)
         window.update()
         window.update_idletasks()
         viewable = bool(window.winfo_viewable())
         window.destroy()
         if viewable:
-            print("             窗口可以创建并显示, 图形环境正常")
+            print(t("             窗口可以创建并显示, 图形环境正常"))
         else:
-            print("             ⚠ 窗口建出来了但没有显示 (可能被环境隐藏)")
+            print(t("             ⚠ 窗口建出来了但没有显示 (可能被环境隐藏)"))
     except Exception as exc:  # noqa: BLE001
-        print(f"             ✗ 创建窗口失败: {type(exc).__name__}: {exc}")
-        print("               这通常说明当前环境没有可用的图形界面")
+        print(t("             ✗ 创建窗口失败: {0}: {1}").format(type(exc).__name__, exc))
+        print(t("               这通常说明当前环境没有可用的图形界面"))
 
     harness = {k: v for k, v in os.environ.items() if k.startswith("DSH_")}
     if harness:
         print()
-        print("  ⚠ 当前终端带着自动化工具的环境变量 "
-              f"({', '.join(sorted(harness))}), 图形界面在这里可能显示不出来。")
-        print("     请换一个普通的 PowerShell / 命令提示符窗口, 或双击 run_chat.bat。")
+        print(t("  ⚠ 当前终端带着自动化工具的环境变量 ({0}), 图形界面在这里可能显示不出来。").format(', '.join(sorted(harness))))
+        print(t("     请换一个普通的 PowerShell / 命令提示符窗口, 或双击 run_chat.bat。"))
 
     print()
-    print("✅ 环境检查通过, 可以运行: python chat_gui.py")
-    print("   只看窗口能不能弹出来: python chat_gui.py --window-test 15")
-    print(f"   启动日志: {log_path()}")
+    print(t("✅ 环境检查通过, 可以运行: python chat_gui.py"))
+    print(t("   只看窗口能不能弹出来: python chat_gui.py --window-test 15"))
+    print(t("   启动日志: {0}").format(log_path()))
     return 0
 
 
 def main(argv=None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    setup_language(args)             # 必须在 check_environment / diagnose / 建界面之前
     if "--diagnose" in args:
         return diagnose(args)
 
     log("=" * 58)
-    log(f"启动: {' '.join(sys.argv)}")
+    log(t("启动: {0}").format(' '.join(sys.argv)))
     code = check_environment()
     if code != 0:
         return code
 
-    log("准备打开界面…")
+    log(t("准备打开界面…"))
     try:
         from lanchat.gui import main as gui_main
 
         result = gui_main(args)
-        log(f"界面已退出 (返回 {result})")
+        log(t("界面已退出 (返回 {0})").format(result))
         return result
     except KeyboardInterrupt:
-        log("用户中断退出")
+        log(t("用户中断退出"))
         return 0
     except Exception:  # noqa: BLE001 - 界面起不来时把原因写下来
-        detail = startup_log.dump_exception("启动界面")
+        detail = startup_log.dump_exception(t("启动界面"))
         print()
         print("=" * 62)
-        print("启动时发生异常 (详细信息已写入日志):")
+        print(t("启动时发生异常 (详细信息已写入日志):"))
         print("=" * 62)
         print(detail)
-        print(f"日志文件: {log_path()}")
+        print(t("日志文件: {0}").format(log_path()))
         return 1
 
 

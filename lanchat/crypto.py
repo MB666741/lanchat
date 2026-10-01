@@ -23,6 +23,7 @@ Finished / 密钥派生            HKDF-SHA256 派生 AES-256-GCM 会话密钥
 
 from __future__ import annotations
 
+from .i18n import t
 import hashlib
 import hmac
 import json
@@ -165,18 +166,18 @@ class SessionCipher:
             nonce = b64d(str(payload["n"]))
             blob = b64d(str(payload["c"]))
         except (KeyError, TypeError, ValueError) as exc:
-            raise DecryptError(f"密文格式非法: {exc}") from exc
+            raise DecryptError(t("密文格式非法: {0}").format(exc)) from exc
         if len(nonce) < NONCE_PREFIX_BYTES + 8:
-            raise DecryptError("nonce 长度非法")
+            raise DecryptError(t("nonce 长度非法"))
         counter = int.from_bytes(nonce[NONCE_PREFIX_BYTES:], "big")
         if counter <= 0:
-            raise DecryptError("nonce 计数非法")
+            raise DecryptError(t("nonce 计数非法"))
         if counter in self._seen:
-            raise DecryptError("检测到重放报文, 已丢弃")
+            raise DecryptError(t("检测到重放报文, 已丢弃"))
         try:
             raw = self._recv.decrypt(nonce, blob, self._aad)
         except InvalidTag as exc:
-            raise DecryptError("密文认证失败 (被篡改或密钥不符)") from exc
+            raise DecryptError(t("密文认证失败 (被篡改或密钥不符)")) from exc
         # 只有解密成功才记入窗口, 避免伪造报文把计数顶高
         self._seen.add(counter)
         if counter > self._high_water:
@@ -195,9 +196,9 @@ class SessionCipher:
         try:
             message = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise DecryptError(f"明文不是合法 JSON: {exc}") from exc
+            raise DecryptError(t("明文不是合法 JSON: {0}").format(exc)) from exc
         if not isinstance(message, dict):
-            raise DecryptError("明文必须是 JSON 对象")
+            raise DecryptError(t("明文必须是 JSON 对象"))
         message.pop("p", None)          # 去掉长度混淆用的填充 (见 pad_message)
         packed = message.get("z")
         if isinstance(packed, str) and packed:
@@ -205,7 +206,7 @@ class SessionCipher:
             try:
                 return json.loads(zlib.decompress(b64d(packed)).decode("utf-8"))
             except (OSError, ValueError, UnicodeDecodeError) as exc:
-                raise DecryptError(f"压缩消息解不开: {exc}") from exc
+                raise DecryptError(t("压缩消息解不开: {0}").format(exc)) from exc
         return message
 
     def encrypt_chunk(self, raw: bytes) -> Dict[str, str]:
@@ -225,9 +226,9 @@ class SessionCipher:
         try:
             fresh = b64d(fresh_b64)
         except Exception as exc:  # noqa: BLE001
-            raise SecurityError(f"轮换随机数非法: {exc}") from exc
+            raise SecurityError(t("轮换随机数非法: {0}").format(exc)) from exc
         if len(fresh) < 16:
-            raise SecurityError("轮换随机数太短")
+            raise SecurityError(t("轮换随机数太短"))
         secret = self._secret if self._secret else self._send_fallback_secret()
         send_key, recv_key = derive_rekey(secret, self.session_id, self.epoch, fresh, self._role)
         new_cipher = SessionCipher(send_key, recv_key, self.session_id,
@@ -413,7 +414,7 @@ def answer_key(answer: str, salt_b64: str) -> bytes:
     try:
         salt = b64d(salt_b64)
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError(f"验证问题的盐非法: {exc}") from exc
+        raise SecurityError(t("验证问题的盐非法: {0}").format(exc)) from exc
     kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt,
                      iterations=ANSWER_KDF_ITERATIONS)
     return kdf.derive(normalize_answer(answer).encode("utf-8"))
@@ -424,7 +425,7 @@ def answer_proof(answer: str, salt_b64: str, nonce_b64: str) -> str:
     try:
         nonce = b64d(nonce_b64)
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError(f"验证问题的随机数非法: {exc}") from exc
+        raise SecurityError(t("验证问题的随机数非法: {0}").format(exc)) from exc
     key = answer_key(answer, salt_b64)
     return b64e(hmac.new(key, b"lanchat/v2/answer-proof|" + nonce, hashlib.sha256).digest())
 
@@ -449,11 +450,11 @@ def answer_proof_with_key(key_b64: str, nonce_b64: str) -> str:
     try:
         key = b64d(key_b64)
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError(f"验证问题的密钥非法: {exc}") from exc
+        raise SecurityError(t("验证问题的密钥非法: {0}").format(exc)) from exc
     try:
         nonce = b64d(nonce_b64)
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError(f"验证问题的随机数非法: {exc}") from exc
+        raise SecurityError(t("验证问题的随机数非法: {0}").format(exc)) from exc
     return b64e(hmac.new(key, b"lanchat/v2/answer-proof|" + nonce, hashlib.sha256).digest())
 
 
@@ -515,29 +516,29 @@ def peer_rekey_of(hello: Dict[str, Any]) -> Optional[int]:
 def check_hello(hello: Dict[str, Any]) -> IdentityCard:
     """校验对方 hello 报文结构, 返回并验证其身份卡。"""
     if hello.get("type") != "hello":
-        raise SecurityError("握手报文类型错误")
+        raise SecurityError(t("握手报文类型错误"))
     if int(hello.get("v", 0)) != PROTOCOL_VERSION:
-        raise SecurityError(f"协议版本不一致 (对方 {hello.get('v')}, 本机 {PROTOCOL_VERSION})")
+        raise SecurityError(t("协议版本不一致 (对方 {0}, 本机 {1})").format(hello.get('v'), PROTOCOL_VERSION))
     if hello.get("suite") != CIPHER_SUITE:
-        raise SecurityError(f"加密套件不一致: {hello.get('suite')}")
+        raise SecurityError(t("加密套件不一致: {0}").format(hello.get('suite')))
     if hello.get("purpose") not in ("friend", "request"):
-        raise SecurityError("握手用途字段非法")
+        raise SecurityError(t("握手用途字段非法"))
     for field in ("sid", "x", "nonce"):
         value = hello.get(field)
         if not isinstance(value, str) or not value:
-            raise SecurityError(f"握手报文缺少字段 {field}")
+            raise SecurityError(t("握手报文缺少字段 {0}").format(field))
     try:
         if len(b64d(str(hello["x"]))) != 32 or len(b64d(str(hello["nonce"]))) != 32:
-            raise ValueError("长度不对")
+            raise ValueError(t("长度不对"))
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError(f"临时公钥/随机数非法: {exc}") from exc
+        raise SecurityError(t("临时公钥/随机数非法: {0}").format(exc)) from exc
     card_data = hello.get("card")
     if not isinstance(card_data, dict):
-        raise SecurityError("对方没有附带身份卡")
+        raise SecurityError(t("对方没有附带身份卡"))
     try:
         return IdentityCard.from_dict(card_data)
     except ValueError as exc:
-        raise SecurityError(f"对方身份卡非法: {exc}") from exc
+        raise SecurityError(t("对方身份卡非法: {0}").format(exc)) from exc
 
 
 def _proof_payload(sid: str, digest: bytes, role: str) -> bytes:
@@ -550,13 +551,13 @@ def make_proof(identity: LocalIdentity, sid: str, digest: bytes, role: str) -> D
 
 def check_proof(proof: Dict[str, Any], card: IdentityCard, sid: str, digest: bytes, role: str) -> None:
     if proof.get("type") != "proof":
-        raise SecurityError("握手证明报文类型错误")
+        raise SecurityError(t("握手证明报文类型错误"))
     try:
         signature = b64d(str(proof.get("sig", "")))
     except Exception as exc:  # noqa: BLE001
-        raise SecurityError("握手证明编码非法") from exc
+        raise SecurityError(t("握手证明编码非法")) from exc
     if not verify_detached(card.ed_pub, signature, _proof_payload(sid, digest, role)):
-        raise SecurityError("对方身份签名验证失败 (可能是中间人攻击或身份被替换)")
+        raise SecurityError(t("对方身份签名验证失败 (可能是中间人攻击或身份被替换)"))
 
 
 @dataclass
@@ -597,7 +598,7 @@ def _read_frame(sock: socket.socket, timeout: float) -> Dict[str, Any]:
     try:
         return protocol.read_one_frame(sock, timeout=timeout)
     except protocol.ConnectionClosed as exc:
-        raise HandshakeRejected(f"对方提前断开连接 ({exc})") from exc
+        raise HandshakeRejected(t("对方提前断开连接 ({0})").format(exc)) from exc
 
 
 def _finish(identity: LocalIdentity, peer_card: IdentityCard, my_eph: X25519PrivateKey,
@@ -610,7 +611,7 @@ def _finish(identity: LocalIdentity, peer_card: IdentityCard, my_eph: X25519Priv
     if expected_peer is not None and expected_peer != peer_card.peer_id:
         # 好友会话里对方换了身份 => 直接拒绝
         raise SecurityError(
-            f"对方身份与好友记录不符 (对方指纹 {peer_card.fingerprint})"
+            t("对方身份与好友记录不符 (对方指纹 {0})").format(peer_card.fingerprint)
         )
     expected = expected_peer is not None
     return HandshakeResult(
@@ -649,11 +650,11 @@ def handshake_initiate(
 
     reply = _read_frame(sock, timeout)
     if reply.get("type") == "error":
-        raise HandshakeRejected(str(reply.get("reason", "对方拒绝连接")),
+        raise HandshakeRejected(str(reply.get("reason", t("对方拒绝连接"))),
                                 code=str(reply.get("code", "") or ""))
     peer_card = check_hello(reply)
     if reply.get("sid") != sid:
-        raise SecurityError("会话号不一致")
+        raise SecurityError(t("会话号不一致"))
     purpose_effective = purpose
     if purpose == "friend" and reply.get("purpose") != "friend":
         # 我以为对方是好友, 但对方并不认识我 -> 按加好友请求流程处理
@@ -663,7 +664,7 @@ def handshake_initiate(
     protocol.send_frame(sock, make_proof(identity, sid, digest, "initiator"))
     final = _read_frame(sock, timeout)
     if final.get("type") == "error":
-        raise HandshakeRejected(str(final.get("reason", "对方拒绝连接")),
+        raise HandshakeRejected(str(final.get("reason", t("对方拒绝连接"))),
                                 code=str(final.get("code", "") or ""))
     check_proof(final, peer_card, sid, digest, "responder")
 
@@ -698,15 +699,15 @@ def handshake_respond(
     """
     hello = first_frame if first_frame is not None else _read_frame(sock, timeout)
     if hello.get("type") == "error":
-        raise HandshakeRejected(str(hello.get("reason", "对方拒绝连接")),
+        raise HandshakeRejected(str(hello.get("reason", t("对方拒绝连接"))),
                                 code=str(hello.get("code", "") or ""))
     peer_card = check_hello(hello)
     if purpose_strict and hello.get("purpose") != purpose:
-        _send_error(sock, f"用途不符 (对方声明 {hello.get('purpose')})")
-        raise HandshakeRejected(f"用途不符: {hello.get('purpose')}")
+        _send_error(sock, t("用途不符 (对方声明 {0})").format(hello.get('purpose')))
+        raise HandshakeRejected(t("用途不符: {0}").format(hello.get('purpose')))
     if expected_peer is not None and peer_card.peer_id != expected_peer:
-        _send_error(sock, "你的密钥与你好友列表里的身份不符")
-        raise SecurityError("对方 peer_id 与好友记录不符")
+        _send_error(sock, t("你的密钥与你好友列表里的身份不符"))
+        raise SecurityError(t("对方 peer_id 与好友记录不符"))
 
     sid = str(hello["sid"])
     my_eph = X25519PrivateKey.generate()
@@ -720,11 +721,11 @@ def handshake_respond(
 
     proof = _read_frame(sock, timeout)
     if proof.get("type") == "error":
-        raise HandshakeRejected(str(proof.get("reason", "对方拒绝连接")))
+        raise HandshakeRejected(str(proof.get("reason", t("对方拒绝连接"))))
     try:
         check_proof(proof, peer_card, sid, digest, "initiator")
     except SecurityError as exc:
-        _send_error(sock, "身份签名验证失败")
+        _send_error(sock, t("身份签名验证失败"))
         raise SecurityError(str(exc)) from exc
 
     protocol.send_frame(sock, make_proof(identity, sid, digest, "responder"))

@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+from .i18n import t
 import json
 import os
 import random
@@ -33,7 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from . import crypto, protocol
+from . import crypto, i18n, protocol
 from .constants import (
     ACCEPT_RETRY_SECONDS,
     CONNECT_TIMEOUT,
@@ -239,6 +240,9 @@ class ChatService:
         self.reconnect_cooldown = reconnect_cooldown
         self.rekey_every = max(0, int(rekey_every))
         self.protocol_version = PROTOCOL_VERSION
+        # 界面语言 (落盘, **重启后生效**): 运行时语言由入口 chat_gui.py 在建立界面之前定好,
+        # 这里只负责"记住用户选的那一个"。见 lanchat/i18n.py 顶部说明。
+        self.language = i18n.current_language()
 
         self.data_dir = resolve_app_dir(data_dir)
         self.data_dir_warning = data_dir_writable_warning()
@@ -249,7 +253,7 @@ class ChatService:
         self.download_dir, self.download_dir_warning = _prepare_dir(
             download_dir or default_download_dir()
         )
-        boot_name = name.strip() or "未命名用户"
+        boot_name = name.strip() or t("未命名用户")
         self.identity, created = LocalIdentity.load_or_create(
             os.path.join(self.data_dir, IDENTITY_FILE), boot_name
         )
@@ -299,7 +303,7 @@ class ChatService:
             return
         from . import startup_log
 
-        startup_log.step("服务: 绑定 TCP 监听…")
+        startup_log.step(t("服务: 绑定 TCP 监听…"))
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._listener.bind(("", self.tcp_port))
@@ -310,7 +314,7 @@ class ChatService:
         if self.enable_discovery:
             # 这一步里会枚举本机网卡 (Windows 上要跑一次 `ipconfig`), 在打包后的窗口版里
             # 可能花掉好几秒 —— 放在主线程上就是"未响应" (用户报过: 设置完昵称卡几秒)。
-            startup_log.step("服务: 建发现层 (枚举网卡 / 广播地址)…")
+            startup_log.step(t("服务: 建发现层 (枚举网卡 / 广播地址)…"))
             self._discovery = DiscoveryService(
                 peer_id=self.peer_id,
                 name=self.name,
@@ -321,9 +325,9 @@ class ChatService:
                 on_peer_updated=self._on_lan_peer_updated,
                 discoverable=self.discoverable,
             )
-            startup_log.step("服务: 发现层就绪")
+            startup_log.step(t("服务: 发现层就绪"))
         self._stop.clear()
-        startup_log.step("服务: 启动接收/管理线程…")
+        startup_log.step(t("服务: 启动接收/管理线程…"))
         self._accept_thread = threading.Thread(target=self._accept_loop, name="tcp-accept", daemon=True)
         self._accept_thread.start()
         self._manager_thread = threading.Thread(target=self._manager_loop, name="conn-manager", daemon=True)
@@ -332,19 +336,19 @@ class ChatService:
             self._discovery.start()
         self._started = True
 
-        startup_log.step("服务: 整理本机地址/指纹…")
-        tips = [f"我是「{self.name}」", f"TCP 端口 {self.tcp_port}",
-                "本机地址 " + (", ".join(local_ipv4_addresses()) or "未知"),
-                f"身份指纹 {self.fingerprint}"]
+        startup_log.step(t("服务: 整理本机地址/指纹…"))
+        tips = [t("我是「{0}」").format(self.name), t("TCP 端口 {0}").format(self.tcp_port),
+                t("本机地址 ") + (", ".join(local_ipv4_addresses()) or t("未知")),
+                t("身份指纹 {0}").format(self.fingerprint)]
         if self.identity_created:
-            tips.append("已生成新的身份密钥对")
+            tips.append(t("已生成新的身份密钥对"))
         for warning in (self.data_dir_warning, self.download_dir_warning):
             if warning:
                 tips.append(warning)
         self._emit(EventKind.READY, " | ".join(tips))
         self._emit(EventKind.CONTACTS)
         self._emit(EventKind.LAN_PEERS)
-        startup_log.step("服务: 启动完成")
+        startup_log.step(t("服务: 启动完成"))
 
     def stop(self) -> None:
         if not self._started:
@@ -363,11 +367,11 @@ class ChatService:
             conns = list(self._connections.values())
             self._connections.clear()
         for conn in conns:
-            conn.close("本机退出")
+            conn.close(t("本机退出"))
         self._save_contacts()
         self._save_settings()
         self._started = False
-        self._emit(EventKind.STOPPED, "服务已停止")
+        self._emit(EventKind.STOPPED, t("服务已停止"))
 
     def simulate_offline(self, seconds: float = 6.0) -> bool:
         """自测专用: 真的把本机"下线"几秒再回来 (不是装样子)。
@@ -388,13 +392,12 @@ class ChatService:
 
         def worker() -> None:
             try:
-                self._emit(EventKind.INFO, f"🧪 自测: 模拟掉线 {float(seconds):.0f} 秒 "
-                                           f"(对方会看到我离线, 之后自动重连)…")
+                self._emit(EventKind.INFO, t("🧪 自测: 模拟掉线 {0:.0f} 秒 (对方会看到我离线, 之后自动重连)…").format(float(seconds)))
                 with self._lock:
                     conns = list(self._connections.values())
                 for conn in conns:
                     try:
-                        conn.close("自测: 模拟掉线")
+                        conn.close(t("自测: 模拟掉线"))
                     except Exception:  # noqa: BLE001 - 模拟掉线时出错不该影响后续
                         pass
                 self.stop()
@@ -405,10 +408,10 @@ class ChatService:
                 except OSError:
                     self.tcp_port = 0              # 端口被占了就退回随机端口
                     self.start()
-                self._emit(EventKind.INFO, "🧪 自测: 已恢复上线 (对方的自动重连会把我接回来)")
+                self._emit(EventKind.INFO, t("🧪 自测: 已恢复上线 (对方的自动重连会把我接回来)"))
                 self._emit(EventKind.STATUS)
             except Exception as exc:  # noqa: BLE001 - 自测功能也要如实报错, 不能静默
-                self._emit(EventKind.ERROR, f"模拟掉线失败: {type(exc).__name__}: {exc}")
+                self._emit(EventKind.ERROR, t("模拟掉线失败: {0}: {1}").format(type(exc).__name__, exc))
             finally:
                 self._simulating = False
 
@@ -429,13 +432,13 @@ class ChatService:
     def set_name(self, name: str, persist: bool = True) -> str:
         name = (name or "").strip()
         if not name:
-            raise ValueError("昵称不能为空")
+            raise ValueError(t("昵称不能为空"))
         self.identity.set_name(name)
         if persist:
             self.identity.save(os.path.join(self.data_dir, IDENTITY_FILE))
             if self._discovery:
                 self._discovery.update_identity(name, self.tcp_port)
-            self._emit(EventKind.INFO, f"昵称已改为「{name}」")
+            self._emit(EventKind.INFO, t("昵称已改为「{0}」").format(name))
             self._emit(EventKind.CONTACTS)
         return name
 
@@ -461,12 +464,12 @@ class ChatService:
             effective = conn.set_local_rekey(self.rekey_every)
             conn.send_message({"t": "rekey-pref", "rekey": self.rekey_every})
             self._emit(EventKind.INFO,
-                       f"与 {conn.peer_name} 协商后的轮换频率: "
-                       + (f"每 {effective} 条消息" if effective else "关闭"))
+                       t("与 {0} 协商后的轮换频率: ").format(conn.peer_name)
+                       + (t("每 {0} 条消息").format(effective) if effective else t("关闭")))
         self._save_settings()
         self._emit(EventKind.INFO,
-                   f"密钥轮换: 每 {self.rekey_every} 条消息一次" if self.rekey_every
-                   else "密钥轮换已关闭")
+                   t("密钥轮换: 每 {0} 条消息一次").format(self.rekey_every) if self.rekey_every
+                   else t("密钥轮换已关闭"))
 
     def _handle_rekey_pref(self, conn: Connection, message: Dict[str, Any]) -> None:
         """对方改了他的轮换设置 -> 重新协商 (双方结果一致)。"""
@@ -476,9 +479,8 @@ class ChatService:
             return
         effective = conn.set_peer_rekey(value)
         self._emit(EventKind.INFO,
-                   f"{conn.peer_name} 把密钥轮换设为每 {value} 条; "
-                   f"协商后这条会话: "
-                   + (f"每 {effective} 条消息换一次" if effective else "不自动轮换"),
+                   t("{0} 把密钥轮换设为每 {1} 条; 协商后这条会话: ").format(conn.peer_name, value)
+                   + (t("每 {0} 条消息换一次").format(effective) if effective else t("不自动轮换")),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"notice": True, "level": "info", "silent": True})
 
@@ -532,7 +534,7 @@ class ChatService:
             # 端口 0 = "让系统随机分配", 对**对方**来说不是有效地址。
             # 踩过一次: 服务还没 start() (端口还没绑定) 就先登记, 结果列表里能看到人、
             # 请求却永远发不出去, 只在状态栏写一句"对方不在线", 很难查。
-            self._emit(EventKind.ERROR, f"登记 {name} 失败: 端口无效 ({port})")
+            self._emit(EventKind.ERROR, t("登记 {0} 失败: 端口无效 ({1})").format(name, port))
             return
         peer = DiscoveredPeer(peer_id=peer_id, name=name, host=host, port=port, manual=manual)
         with self._lock:
@@ -543,7 +545,7 @@ class ChatService:
                 return
             self._lan_peers[peer_id] = peer
         self._emit(EventKind.LAN_PEERS)
-        self._emit(EventKind.PRESENCE, f"已手动登记 {name} ({host}:{port})",
+        self._emit(EventKind.PRESENCE, t("已手动登记 {0} ({1}:{2})").format(name, host, port),
                    peer_id=peer_id, name=name)
 
     def is_discovered(self, peer_id: str) -> bool:
@@ -581,15 +583,15 @@ class ChatService:
             # 也允许调用方把 "IP:端口" 整串塞进 host (GUI 会自己拆, 但脚本/调用方可能偷懒)
             host, port, err = split_manual_address(host)
             if err:
-                self._emit(EventKind.ERROR, f"{err} —— 请填对方 IP (或 IP:TCP端口)")
+                self._emit(EventKind.ERROR, t("{0} —— 请填对方 IP (或 IP:TCP端口)").format(err))
                 return None
         if not host:
-            self._emit(EventKind.ERROR, "地址不能为空: 请填对方 IP (或 IP:TCP端口)")
+            self._emit(EventKind.ERROR, t("地址不能为空: 请填对方 IP (或 IP:TCP端口)"))
             return None
         try:
             socket.gethostbyname(host)          # 允许主机名, 但必须能解析
         except OSError:
-            self._emit(EventKind.ERROR, f"解析不了这个地址: {host}")
+            self._emit(EventKind.ERROR, t("解析不了这个地址: {0}").format(host))
             return None
 
         if not port:
@@ -601,16 +603,16 @@ class ChatService:
             if label:
                 self._rename_peer(peer.peer_id, label)
             self._emit(EventKind.INFO,
-                       f"探测到 {peer.name} ({peer.host}:{peer.port}), 正在发送加好友请求…",
+                       t("探测到 {0} ({1}:{2}), 正在发送加好友请求…").format(peer.name, peer.host, peer.port),
                        peer_id=peer.peer_id, name=peer.name)
             self.send_friend_request(peer.peer_id)
             return self.get_contact(peer.peer_id)
 
         if not (0 < port < 65536):
-            self._emit(EventKind.ERROR, f"端口超出范围: {port} (或者只填 IP, 让程序自动探测)")
+            self._emit(EventKind.ERROR, t("端口超出范围: {0} (或者只填 IP, 让程序自动探测)").format(port))
             return None
         placeholder = manual_peer_id(host, port)
-        label = name.strip() or f"手动添加 {host}:{port}"
+        label = name.strip() or t("手动添加 {0}:{1}").format(host, port)
         with self._lock:
             self._lan_peers[placeholder] = DiscoveredPeer(
                 peer_id=placeholder, name=label, host=host, port=port,
@@ -618,7 +620,7 @@ class ChatService:
                 # (它在握手后会被迁移成真实身份, 届时会被发现层记录取代)
                 manual=True)
         self._emit(EventKind.LAN_PEERS)
-        self._emit(EventKind.INFO, f"已手动登记 {host}:{port}, 正在发送加好友请求…")
+        self._emit(EventKind.INFO, t("已手动登记 {0}:{1}, 正在发送加好友请求…").format(host, port))
         self.send_friend_request(placeholder)
         return self.get_contact(placeholder)
 
@@ -643,12 +645,12 @@ class ChatService:
             discovery = self._discovery
         if discovery is None:
             self._emit(EventKind.ERROR,
-                       "本机没开自动发现, 不能自动探测端口 —— 请填 `IP:TCP端口` 直接连")
+                       t("本机没开自动发现, 不能自动探测端口 —— 请填 `IP:TCP端口` 直接连"))
             return None
         try:
             ip = socket.gethostbyname(host)
         except OSError:
-            self._emit(EventKind.ERROR, f"解析不了这个地址: {host}")
+            self._emit(EventKind.ERROR, t("解析不了这个地址: {0}").format(host))
             return None
         try:
             explicit = int(port or 0)
@@ -656,7 +658,7 @@ class ChatService:
             explicit = 0
         candidates = [explicit] if 0 < explicit < 65536 else self._probe_ports()
         self._emit(EventKind.INFO,
-                   f"正在探测 {ip} (端口 {'/'.join(str(p) for p in candidates)})…")
+                   t("正在探测 {0} (端口 {1})…").format(ip, '/'.join(str(p) for p in candidates)))
         for candidate in candidates:
             for _ in range(max(1, PROBE_ATTEMPTS)):
                 discovery.probe(ip, candidate)
@@ -671,9 +673,8 @@ class ChatService:
                         return found[0]
                     time.sleep(0.1)
         self._emit(EventKind.ERROR,
-                   f"探测不到 {ip} —— 对方可能没开程序、开了『隐身(不允许被搜索)』、"
-                   f"改了发现端口, 或者防火墙挡住了 UDP。\n"
-                   f"这种情况请改用『填 IP:TCP端口』直接连。")
+                   t("""探测不到 {0} —— 对方可能没开程序、开了『隐身(不允许被搜索)』、改了发现端口, 或者防火墙挡住了 UDP。
+这种情况请改用『填 IP:TCP端口』直接连。""").format(ip))
         return None
 
     def _rename_peer(self, peer_id: str, name: str) -> None:
@@ -713,7 +714,7 @@ class ChatService:
                     self._peer_questions[real_peer_id] = self._peer_questions[placeholder]
                 self._peer_questions.pop(placeholder, None)
         self._emit(EventKind.LAN_PEERS)
-        self._emit(EventKind.INFO, f"已确认手动添加的 {contact.name} 身份 ({contact.fingerprint})",
+        self._emit(EventKind.INFO, t("已确认手动添加的 {0} 身份 ({1})").format(contact.name, contact.fingerprint),
                    peer_id=contact.peer_id, name=contact.name)
         self._save_contacts()
         return contact
@@ -761,7 +762,7 @@ class ChatService:
         if contact and contact.blocked:
             # contact.blocked = **我**封了他。这个不分方向会搞错: 对方封我时只记
             # blocked_by_peer, 不该拦着我"重新申请"。
-            self._emit(EventKind.ERROR, f"{contact.name} 已被你封禁, 请先解禁")
+            self._emit(EventKind.ERROR, t("{0} 已被你封禁, 请先解禁").format(contact.name))
             return False
         if contact and contact.blocked_by_peer:
             # 对方之前封了我: 清掉标记再试一次。如果对方还没解禁, 他会用
@@ -773,9 +774,9 @@ class ChatService:
             contact.state = ContactState.REQUEST_OUT.value
             self._save_contacts()
             self._emit(EventKind.CONTACTS)
-            self._emit(EventKind.INFO, f"正在试探 {contact.name} 是否已解除封禁…")
+            self._emit(EventKind.INFO, t("正在试探 {0} 是否已解除封禁…").format(contact.name))
         if contact and contact.is_friend:
-            self._emit(EventKind.INFO, f"{contact.name} 已经是你的好友了")
+            self._emit(EventKind.INFO, t("{0} 已经是你的好友了").format(contact.name))
             return True
         if contact and contact.state == ContactState.REQUEST_IN.value:
             self.accept_request(contact.peer_id)   # 互相同意
@@ -806,7 +807,7 @@ class ChatService:
 
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.INFO, f"已向 {contact.name} 发出加好友请求, 等待对方确认…")
+        self._emit(EventKind.INFO, t("已向 {0} 发出加好友请求, 等待对方确认…").format(contact.name))
         threading.Thread(target=self._dial_and_send_request, args=(contact.peer_id,),
                          name=f"req-{contact.name}", daemon=True).start()
         return True
@@ -820,10 +821,10 @@ class ChatService:
         if contact is None:
             with self._lock:
                 self._incoming_questions.pop(peer_id, None)
-            self._emit(EventKind.INFO, "没有待取消的加好友请求")
+            self._emit(EventKind.INFO, t("没有待取消的加好友请求"))
             return False
         if contact.is_friend:
-            self._emit(EventKind.INFO, f"{contact.name} 已经是好友了, 不需要取消请求")
+            self._emit(EventKind.INFO, t("{0} 已经是好友了, 不需要取消请求").format(contact.name))
             return False
         name = contact.name
         with self._lock:
@@ -834,7 +835,7 @@ class ChatService:
             if notify:
                 conn.send_message({"t": "friend-cancel", "name": self.name, "ts": time.time()})
                 time.sleep(0.15)             # 给写线程一点时间把这条通知发出去
-            conn.close("已取消加好友请求")
+            conn.close(t("已取消加好友请求"))
         if contact.state == ContactState.REQUEST_OUT.value:
             with self._lock:
                 self._contacts.pop(peer_id, None)
@@ -843,7 +844,7 @@ class ChatService:
             contact.updated_at = time.time()
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.INFO, f"已取消发给 {name} 的加好友请求")
+        self._emit(EventKind.INFO, t("已取消发给 {0} 的加好友请求").format(name))
         return True
 
     def _contact_for_settings(self, peer_id: str) -> Optional[Contact]:
@@ -906,7 +907,7 @@ class ChatService:
         question = (question or "").strip()
         if not question or not (answer or "").strip():
             if contact is None and not self.has_question_for(peer_id):
-                self._emit(EventKind.ERROR, "找不到这个人 (对方可能不在局域网了)")
+                self._emit(EventKind.ERROR, t("找不到这个人 (对方可能不在局域网了)"))
                 return False
             return self.clear_question(peer_id)
         salt = crypto.new_answer_salt()
@@ -928,7 +929,7 @@ class ChatService:
         self._save_settings()
         self._emit(EventKind.CONTACTS)
         name = contact.name if contact else peer_id
-        self._emit(EventKind.INFO, f"已为 {name} 设置加好友验证问题 (答错 {attempts} 次自动封禁)")
+        self._emit(EventKind.INFO, t("已为 {0} 设置加好友验证问题 (答错 {1} 次自动封禁)").format(name, attempts))
         return True
 
     def clear_question(self, peer_id: str) -> bool:
@@ -950,7 +951,7 @@ class ChatService:
         self._save_settings()
         self._emit(EventKind.CONTACTS)
         name = contact.name if contact is not None else peer_id
-        self._emit(EventKind.INFO, f"已取消 {name} 的加好友验证问题")
+        self._emit(EventKind.INFO, t("已取消 {0} 的加好友验证问题").format(name))
         return True
 
     def question_of(self, peer_id: str) -> str:
@@ -972,7 +973,7 @@ class ChatService:
         with self._lock:
             pending = self._incoming_questions.get(peer_id)
         if not pending:
-            self._emit(EventKind.ERROR, "这条验证问题已经失效 (对方重新提问后才能作答)")
+            self._emit(EventKind.ERROR, t("这条验证问题已经失效 (对方重新提问后才能作答)"))
             return False
         return self._send_answer(peer_id, answer, pending)
 
@@ -1007,21 +1008,21 @@ class ChatService:
         contact = self.get_contact(peer_id)
         conn = contact.connection if contact else None
         if conn is None or not conn.is_alive:
-            self._emit(EventKind.ERROR, "和对方的连接已断开, 无法提交答案 (请重新发送加好友请求)")
+            self._emit(EventKind.ERROR, t("和对方的连接已断开, 无法提交答案 (请重新发送加好友请求)"))
             return False
         salt = str(pending.get("salt", ""))
         nonce = str(pending.get("nonce", ""))
         try:
             proof = crypto.answer_proof(answer, salt, nonce)
         except crypto.SecurityError as exc:
-            self._emit(EventKind.ERROR, f"答案计算出错: {exc}")
+            self._emit(EventKind.ERROR, t("答案计算出错: {0}").format(exc))
             return False
         if not conn.send_message({"t": "question-answer", "proof": proof}):
-            self._emit(EventKind.ERROR, "答案发送失败, 请重新发送加好友请求")
+            self._emit(EventKind.ERROR, t("答案发送失败, 请重新发送加好友请求"))
             return False
         # 注意: 这里**不**清掉待答问题 —— 答错了要能直接在同一个弹窗里重试
         # (对方那边同一个随机数还留着, 直到答对才作废)
-        self._emit(EventKind.INFO, "已提交答案, 等待对方校验…")
+        self._emit(EventKind.INFO, t("已提交答案, 等待对方校验…"))
         return True
 
     def _ask_question(self, conn: Connection, question: Dict[str, Any]) -> None:
@@ -1052,7 +1053,7 @@ class ChatService:
         })
         allowed = int(question.get("attempts_left") or attempts)
         self._emit(EventKind.INFO,
-                   f"已向 {conn.peer_name} 发出验证问题 (还剩 {allowed} 次机会)",
+                   t("已向 {0} 发出验证问题 (还剩 {1} 次机会)").format(conn.peer_name, allowed),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"question": text, "attempts_left": allowed})
 
@@ -1076,20 +1077,20 @@ class ChatService:
             question["attempts_left"] = attempts
             with self._lock:
                 self._challenge_state.pop(conn.peer_id, None)
-            self._emit(EventKind.INFO, f"{conn.peer_name} 答对了验证问题 ✓",
+            self._emit(EventKind.INFO, t("{0} 答对了验证问题 ✓").format(conn.peer_name),
                        peer_id=conn.peer_id, name=conn.peer_name)
             return True
 
         question["attempts_left"] = int(question.get("attempts_left") or attempts) - 1
         self._save_settings()
         if int(question["attempts_left"]) <= 0:
-            self.block(conn.peer_id, message="验证问题连续答错")
+            self.block(conn.peer_id, message=t("验证问题连续答错"))
             self._emit(EventKind.ERROR,
-                       f"{conn.peer_name} 连续答错 {attempts} 次验证问题, 已自动封禁",
+                       t("{0} 连续答错 {1} 次验证问题, 已自动封禁").format(conn.peer_name, attempts),
                        peer_id=conn.peer_id, name=conn.peer_name)
         else:
             self._emit(EventKind.ERROR,
-                       f"{conn.peer_name} 答错了验证问题, 还剩 {question['attempts_left']} 次机会",
+                       t("{0} 答错了验证问题, 还剩 {1} 次机会").format(conn.peer_name, question['attempts_left']),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"attempts_left": question["attempts_left"]})
         return False
@@ -1113,8 +1114,8 @@ class ChatService:
                 conn = None                 # 发送失败: 退回"没有通道", 立即重连
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.INFO, f"已同意 {contact.name} 的加好友请求, 可以开始加密聊天了")
-        self._emit(EventKind.CONNECTED, f"与 {contact.name} 的加密会话已建立",
+        self._emit(EventKind.INFO, t("已同意 {0} 的加好友请求, 可以开始加密聊天了").format(contact.name))
+        self._emit(EventKind.CONNECTED, t("与 {0} 的加密会话已建立").format(contact.name),
                    peer_id=contact.peer_id, name=contact.name)
         if conn is None:
             # 双方都已是好友: 用"好友"身份立刻重连, 立刻就能聊
@@ -1147,15 +1148,15 @@ class ChatService:
             return self.remove_friend(peer_id)
         conn = self._live_connection(contact)
         if conn is not None:
-            conn.send_message({"t": "friend-reject", "reason": message or "对方拒绝", "ts": time.time()})
+            conn.send_message({"t": "friend-reject", "reason": message or t("对方拒绝"), "ts": time.time()})
             # 稍等一下再关, 保证"拒绝"这条消息先发出去 (否则对方只会看到连接断开)
-            threading.Timer(0.4, conn.close, args=("已拒绝对方的好友请求",)).start()
+            threading.Timer(0.4, conn.close, args=(t("已拒绝对方的好友请求"),)).start()
         with self._lock:
             self._contacts.pop(contact.peer_id, None)
         self._forget_question_state(contact.peer_id)   # 下次再来还得答题
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.INFO, f"已拒绝 {contact.name} 的加好友请求")
+        self._emit(EventKind.INFO, t("已拒绝 {0} 的加好友请求").format(contact.name))
         return True
 
     def block(self, peer_id: str, message: str = "") -> bool:
@@ -1184,14 +1185,14 @@ class ChatService:
         contact.accept_pending = False       # 封禁状态下也不用再补发"我同意"
         conn = self._live_connection(contact)
         if conn is not None:
-            conn.send_message({"t": "blocked", "reason": message or "已被对方封禁", "ts": time.time()})
-            threading.Timer(0.4, conn.close, args=("已封禁此人",)).start()
+            conn.send_message({"t": "blocked", "reason": message or t("已被对方封禁"), "ts": time.time()})
+            threading.Timer(0.4, conn.close, args=(t("已封禁此人"),)).start()
         self._forget_question_state(contact.peer_id)   # 解禁后也要重新答题
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
         self._emit(EventKind.INFO,
-                   f"已封禁 {contact.name}: 对方无法再向你发请求或消息"
-                   + (" (解禁后你们仍然是好友)" if contact.friend_before_block else ""))
+                   t("已封禁 {0}: 对方无法再向你发请求或消息").format(contact.name)
+                   + (t(" (解禁后你们仍然是好友)") if contact.friend_before_block else ""))
         return True
 
     def unblock(self, peer_id: str) -> bool:
@@ -1227,17 +1228,16 @@ class ChatService:
         if not had_my_block:
             # 只是清掉"对方封了我"的本地标记: 他到底解没解禁, 发一次请求就知道
             self._emit(EventKind.INFO,
-                       f"已清除『{name} 封禁了你』的本地标记; "
-                       f"再发一次加好友请求就能确认对方是否真的解禁了")
+                       t("已清除『{0} 封禁了你』的本地标记; 再发一次加好友请求就能确认对方是否真的解禁了").format(name))
             if was_friend and contact.card is not None:
                 threading.Thread(target=self._connect_once, args=(contact.peer_id, True),
                                  name=f"unblock-{name}", daemon=True).start()
             return True
         if was_friend:
-            self._emit(EventKind.INFO, f"已解除对 {name} 的封禁, 你们仍然是好友, 正在重新连接…")
+            self._emit(EventKind.INFO, t("已解除对 {0} 的封禁, 你们仍然是好友, 正在重新连接…").format(name))
         else:
             self._emit(EventKind.INFO,
-                       f"已解除对 {name} 的封禁 (对方可以重新发送加好友请求)")
+                       t("已解除对 {0} 的封禁 (对方可以重新发送加好友请求)").format(name))
         if was_friend:
             threading.Thread(target=self._connect_once, args=(contact.peer_id, True),
                              name=f"unblock-{name}", daemon=True).start()
@@ -1341,7 +1341,7 @@ class ChatService:
         if conn is not None:
             conn.send_message({"t": "friend-removed", "name": self.name, "ts": time.time()})
             time.sleep(0.15)                 # 给写线程一点时间把这条通知发出去
-            conn.close("已删除好友")
+            conn.close(t("已删除好友"))
         with self._lock:
             self._contacts.pop(contact.peer_id, None)
         # 关键: 删好友时要清掉"他答对过我的题"的记忆。否则他再加回来会直接放行,
@@ -1349,7 +1349,7 @@ class ChatService:
         self._forget_question_state(contact.peer_id)
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.INFO, f"已删除好友 {contact.name} (已通知对方)")
+        self._emit(EventKind.INFO, t("已删除好友 {0} (已通知对方)").format(contact.name))
         return True
 
     # ==================================================================
@@ -1369,18 +1369,18 @@ class ChatService:
         if peer_id:
             contact = self.get_contact(peer_id)
             if contact is None or not contact.is_friend:
-                self._emit(EventKind.ERROR, "没有可发送的对象 (对方不在线或还不是好友)")
+                self._emit(EventKind.ERROR, t("没有可发送的对象 (对方不在线或还不是好友)"))
                 return 0
             if contact.blocked:
                 # contact.blocked = "我封了他"。封禁期间不该继续往他那边发东西
-                self._emit(EventKind.ERROR, f"{contact.name} 已被你封禁, 先解禁再发")
+                self._emit(EventKind.ERROR, t("{0} 已被你封禁, 先解禁再发").format(contact.name))
                 return 0
             targets = [contact]
         else:
             # 群发只发给**当前连着**的好友 (离线的人不用一个个排队)
             targets = [c for c in self.friends() if self._live_connection(c) and c.encrypted]
         if not targets:
-            self._emit(EventKind.ERROR, "没有可发送的对象 (对方不在线或还不是好友)")
+            self._emit(EventKind.ERROR, t("没有可发送的对象 (对方不在线或还不是好友)"))
             return 0
 
         sent = 0
@@ -1408,8 +1408,7 @@ class ChatService:
                 self._emit(EventKind.MESSAGE, text, peer_id=contact.peer_id, name=contact.name,
                            data={"direction": "out", "text": text, "seq": seq, "queued": True})
                 self._emit(EventKind.INFO,
-                           f"{contact.name} 现在不在线: 这条消息先存在本机, "
-                           f"他一上线自动补发 (本程序关掉就没了)",
+                           t("{0} 现在不在线: 这条消息先存在本机, 他一上线自动补发 (本程序关掉就没了)").format(contact.name),
                            peer_id=contact.peer_id, name=contact.name)
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
@@ -1501,7 +1500,7 @@ class ChatService:
             })
         self._send_history_frames(conn, frames)
         self._emit(EventKind.INFO,
-                   f"已把 {len(entries)} 条历史对话补发给 {contact.name} (本会话内有效)")
+                   t("已把 {0} 条历史对话补发给 {1} (本会话内有效)").format(len(entries), contact.name))
 
     @staticmethod
     def _send_history_frames(conn: Connection, frames: List[Dict[str, Any]]) -> None:
@@ -1573,8 +1572,7 @@ class ChatService:
         fresh = [it for it in accepted if it[4] and not it[0]]
         if history:
             self._emit(EventKind.HISTORY,
-                       f"从 {name} 那里取回了 {len(history)} 条历史对话 "
-                       f"(本会话内有效, 关掉程序还是会没)",
+                       t("从 {0} 那里取回了 {1} 条历史对话 (本会话内有效, 关掉程序还是会没)").format(name, len(history)),
                        peer_id=conn.peer_id, name=name, data={"count": len(history)})
         for own, seq, ts, text, pending in accepted:
             self._record_chat(conn.peer_id, own=own, seq=seq, text=text, ts=ts)
@@ -1595,8 +1593,7 @@ class ChatService:
                              "queued_delivery": is_new})
         if fresh:
             self._emit(EventKind.INFO,
-                       f"{name} 在你离线期间发的 {len(fresh)} 条消息已送达 "
-                       f"(对方程序一直开着才补得回来)",
+                       t("{0} 在你离线期间发的 {1} 条消息已送达 (对方程序一直开着才补得回来)").format(name, len(fresh)),
                        peer_id=conn.peer_id, name=name,
                        data={"notice": True, "level": "info", "silent": True})
         self._save_contacts()
@@ -1624,12 +1621,23 @@ class ChatService:
             discovery.set_discoverable(value)
         self._save_settings()
         if value:
-            self._emit(EventKind.INFO, "已允许被自动搜索 (广播和单播探测都会回应)")
+            self._emit(EventKind.INFO, t("已允许被自动搜索 (广播和单播探测都会回应)"))
         else:
             self._emit(EventKind.INFO,
-                       f"已开启隐身: 别人在局域网里搜不到你, 只能用『手动添加』填 "
-                       f"你的 IP:{self.tcp_port} 来加你")
+                       t("已开启隐身: 别人在局域网里搜不到你, 只能用『手动添加』填 你的 IP:{0} 来加你").format(self.tcp_port))
         self._emit(EventKind.STATUS)
+
+    def set_language(self, code: str) -> str:
+        """记住界面语言 (**重启后生效**)。
+
+        为什么不立即切: 界面上的字是建控件时一次性写进去的, 运行时换语言要重建整棵控件树,
+        弹窗/菜单/已经打开的对话框都得跟着重建 —— 出错的面比收益大。所以只落盘,
+        下次启动时由 chat_gui.py 在建界面之前读出来。返回归一化后的语言代码。
+        """
+        code = i18n.normalize(code)
+        self.language = code
+        self._save_settings()
+        return code
 
     def set_tcp_port(self, port: int) -> bool:
         """固定"本机聊天端口" (0 = 每次随机)。**重启后生效**。
@@ -1641,21 +1649,21 @@ class ChatService:
         try:
             value = int(port)
         except (TypeError, ValueError):
-            self._emit(EventKind.ERROR, f"端口得是数字: {port!r}")
+            self._emit(EventKind.ERROR, t("端口得是数字: {0!r}").format(port))
             return False
         if value != 0 and not (1024 <= value < 65536):
-            self._emit(EventKind.ERROR, f"端口要在 1024~65535 之间 (或填 0 = 自动): {value}")
+            self._emit(EventKind.ERROR, t("端口要在 1024~65535 之间 (或填 0 = 自动): {0}").format(value))
             return False
         if value and value == self.discovery_port:
-            self._emit(EventKind.ERROR, f"{value} 是 UDP 自动发现端口, 换个别的")
+            self._emit(EventKind.ERROR, t("{0} 是 UDP 自动发现端口, 换个别的").format(value))
             return False
         self.saved_tcp_port = value
         self._save_settings()
         if value:
             self._emit(EventKind.INFO,
-                       f"本机端口已固定为 {value}, 重启后生效 (手动添加时让对方填 你的IP:{value})")
+                       t("本机端口已固定为 {0}, 重启后生效 (手动添加时让对方填 你的IP:{1})").format(value, value))
         else:
-            self._emit(EventKind.INFO, "本机端口改回自动分配 (每次启动随机), 重启后生效")
+            self._emit(EventKind.INFO, t("本机端口改回自动分配 (每次启动随机), 重启后生效"))
         self._emit(EventKind.STATUS)
         return True
 
@@ -1675,7 +1683,7 @@ class ChatService:
                 fh.write("ok")
             os.remove(probe)
         except OSError as exc:
-            self._emit(EventKind.ERROR, f"这个目录不能用: {path} ({exc})")
+            self._emit(EventKind.ERROR, t("这个目录不能用: {0} ({1})").format(path, exc))
             return False
         self.download_dir = path
         self.download_dir_chosen = True
@@ -1685,18 +1693,18 @@ class ChatService:
         for conn in conns:
             conn.set_incoming_dir(path)
         self._save_settings()
-        self._emit(EventKind.INFO, f"接收目录已改为: {path}")
+        self._emit(EventKind.INFO, t("接收目录已改为: {0}").format(path))
         self._emit(EventKind.STATUS)
         return True
 
     def send_file(self, path: str, peer_id: Optional[str] = None) -> List[OutgoingTransfer]:
         path = os.path.abspath(os.path.expanduser(path))
         if not os.path.isfile(path):
-            self._emit(EventKind.ERROR, f"文件不存在: {path}")
+            self._emit(EventKind.ERROR, t("文件不存在: {0}").format(path))
             return []
         targets = self._message_targets(peer_id)
         if not targets:
-            self._emit(EventKind.ERROR, "没有可发送的对象 (对方不在线或还不是好友)")
+            self._emit(EventKind.ERROR, t("没有可发送的对象 (对方不在线或还不是好友)"))
             return []
         size = os.path.getsize(path)
         transfers = []
@@ -1705,7 +1713,7 @@ class ChatService:
             try:
                 transfer = contact.connection.send_file(path, on_progress=self._on_send_progress)
             except TransferError as exc:
-                self._emit(EventKind.ERROR, f"发送给 {contact.name} 失败: {exc}")
+                self._emit(EventKind.ERROR, t("发送给 {0} 失败: {1}").format(contact.name, exc))
                 continue
             transfers.append(transfer)
             self._emit(EventKind.FILE_OFFER, os.path.basename(path), peer_id=contact.peer_id,
@@ -1724,7 +1732,7 @@ class ChatService:
         if transfer_id:
             pending = [item for item in pending if item[1] == transfer_id]
         if not pending:
-            self._emit(EventKind.ERROR, "没有待确认的文件")
+            self._emit(EventKind.ERROR, t("没有待确认的文件"))
             return False
         ok = False
         for conn, tid, name, size in pending:
@@ -1734,7 +1742,7 @@ class ChatService:
                 transfer = conn.incoming.get(tid)
                 final = transfer.path if transfer is not None else (save_path or self.download_dir)
                 self._emit(EventKind.INFO,
-                           f"已同意接收 {name} ({human_size(size)}) -> {final}",
+                           t("已同意接收 {0} ({1}) -> {2}").format(name, human_size(size), final),
                            peer_id=conn.peer_id, name=conn.peer_name,
                            data={"notice": True, "level": "info", "silent": True,
                                  "file_path": final, "direction": "in"})
@@ -1782,7 +1790,8 @@ class ChatService:
         contact.next_try = 0.0
         return self._connect_once(contact.peer_id, force=True)
 
-    def disconnect(self, peer_id: str, reason: str = "主动断开") -> bool:
+    def disconnect(self, peer_id: str, reason: str = "") -> bool:
+        reason = reason or t("主动断开")
         contact = self.get_contact(peer_id)
         if contact and contact.connection:
             contact.connection.close(reason)
@@ -1815,7 +1824,7 @@ class ChatService:
             address = self._resolve_address(contact)
             if address is None:
                 contact.dial_state = "failed"
-                contact.last_error = "还没发现对方的地址"
+                contact.last_error = t("还没发现对方的地址")
                 contact.next_try = time.time() + self.reconnect_cooldown
                 self._emit(EventKind.STATUS)
                 return False
@@ -1865,7 +1874,7 @@ class ChatService:
         delay = RECONNECT_DELAYS[min(contact.attempts, len(RECONNECT_DELAYS) - 1)]
         contact.next_try = time.time() + max(delay, self.reconnect_cooldown)
         self._emit(EventKind.STATUS)
-        self._emit(EventKind.INFO, f"暂时连不上 {contact.name}: {reason}")
+        self._emit(EventKind.INFO, t("暂时连不上 {0}: {1}").format(contact.name, reason))
 
     def _note_blocked_rejection(self, contact: Contact, exc: BaseException) -> bool:
         """握手被对方以"你被我封禁了"拒绝 -> 本地也标记出来, 别再空转重连。
@@ -1885,7 +1894,7 @@ class ChatService:
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
         self._emit(EventKind.ERROR,
-                   f"{contact.name} 仍然把你封禁着 (对方解禁后会通知你, 你也能重新申请)",
+                   t("{0} 仍然把你封禁着 (对方解禁后会通知你, 你也能重新申请)").format(contact.name),
                    peer_id=contact.peer_id, name=contact.name,
                    data={"notice": True, "level": "warn"})
         return True
@@ -1955,8 +1964,7 @@ class ChatService:
         self._save_contacts()
         is_friend_now = contact.is_friend
         self._emit(EventKind.CONNECTED,
-                   f"与 {contact.name} 的加密通道已建立 (会话 {conn.session_id}"
-                   f"{', 身份已确认' if conn.authenticated else ', 待好友确认'})",
+                   t("与 {0} 的加密通道已建立 (会话 {1}{2})").format(contact.name, conn.session_id, t(', 身份已确认') if conn.authenticated else t(', 待好友确认')),
                    peer_id=conn.peer_id, name=contact.name,
                    data={"session": conn.session_id,
                          "direction": "out" if initiated_by_us else "in",
@@ -2003,9 +2011,9 @@ class ChatService:
             stale_question = self._incoming_questions.pop(conn.peer_id, None)
         if stale_question:
             self._emit(EventKind.INFO,
-                       f"对方的验证问题已失效 (连接断开), 对方上线后重新发一次加好友请求即可",
+                       t("对方的验证问题已失效 (连接断开), 对方上线后重新发一次加好友请求即可"),
                        peer_id=conn.peer_id, name=conn.peer_name)
-        self._emit(EventKind.DISCONNECTED, f"与 {conn.peer_name} 的连接已断开: {reason or '未知原因'}",
+        self._emit(EventKind.DISCONNECTED, t("与 {0} 的连接已断开: {1}").format(conn.peer_name, reason or t('未知原因')),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"notice": True, "level": "info", "silent": True,
                          "offline": True})
@@ -2059,8 +2067,7 @@ class ChatService:
                 if contact.request_tries >= REQUEST_MAX_RETRIES:
                     contact.next_try = now + max(30.0, self.reconnect_cooldown)
                     self._emit(EventKind.INFO,
-                               f"{contact.name} 一直没回应 (重试了 {contact.request_tries} 次), "
-                               f"先不打扰了, 之后会自动再试",
+                               t("{0} 一直没回应 (重试了 {1} 次), 先不打扰了, 之后会自动再试").format(contact.name, contact.request_tries),
                                peer_id=contact.peer_id, name=contact.name,
                                data={"notice": True, "level": "info", "silent": True})
                     continue
@@ -2097,17 +2104,17 @@ class ChatService:
         try:
             card = crypto.check_hello(first)
         except SecurityError as exc:
-            _reject(sock, f"握手报文非法: {exc}")
+            _reject(sock, t("握手报文非法: {0}").format(exc))
             return
 
         with self._lock:
             contact = self._contacts.get(card.peer_id)
         if contact and contact.blocked:
             # code="blocked": 对方据此能明确显示"你还在被封禁", 而不是一句含糊的"连不上"
-            self._emit(EventKind.INFO, f"已拦截被封禁用户 {card.name} 的连接",
+            self._emit(EventKind.INFO, t("已拦截被封禁用户 {0} 的连接").format(card.name),
                        peer_id=card.peer_id, name=card.name,
                        data={"notice": True, "level": "info", "silent": True})
-            _reject(sock, "你已被对方封禁, 无法发送请求或消息", code="blocked")
+            _reject(sock, t("你已被对方封禁, 无法发送请求或消息"), code="blocked")
             return
 
         is_friend = bool(contact and contact.is_friend)
@@ -2117,8 +2124,8 @@ class ChatService:
             ContactState.REQUEST_IN.value, ContactState.REQUEST_OUT.value))
         if is_friend and contact is not None and contact.card:
             if card.ed_pub != contact.card.get("ed_pub"):
-                self._emit(EventKind.ERROR, f"拒绝了一个冒充 {contact.name} 的连接")
-                _reject(sock, "你的密钥与好友记录不符")
+                self._emit(EventKind.ERROR, t("拒绝了一个冒充 {0} 的连接").format(contact.name))
+                _reject(sock, t("你的密钥与好友记录不符"))
                 return
         try:
             result = crypto.handshake_respond(
@@ -2132,7 +2139,7 @@ class ChatService:
                 rekey_every=self.rekey_every,
             )
         except (SecurityError, HandshakeRejected, protocol.ProtocolError, OSError) as exc:
-            self._emit(EventKind.INFO, f"拒绝了来自 {host} 的连接: {exc}")
+            self._emit(EventKind.INFO, t("拒绝了来自 {0} 的连接: {1}").format(host, exc))
             # 握手里失败前可能已经给对方回过一条 error 帧 (crypto 里发的),
             # 所以这里也要"读干净再关", 否则那条帧会被 RST 冲掉
             _half_close(sock)
@@ -2145,7 +2152,7 @@ class ChatService:
             if self.peer_id < result.card.peer_id:
                 _close_quietly(sock)   # 保留我主动发起的那条
                 return
-            existing.close("改用对方发起的新连接")
+            existing.close(t("改用对方发起的新连接"))
 
         if contact is None:
             contact = Contact(peer_id=result.card.peer_id, name=result.card.name,
@@ -2241,11 +2248,11 @@ class ChatService:
             self._save_contacts()
             self._emit(EventKind.CONTACTS)
             self._emit(EventKind.INFO,
-                       f"{conn.peer_name} 取消了加好友请求"
-                       + (", 那道验证问题不用答了" if had_question else ""),
+                       t("{0} 取消了加好友请求").format(conn.peer_name)
+                       + (t(", 那道验证问题不用答了") if had_question else ""),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"notice": True, "level": "info"})
-            conn.close("对方取消了加好友请求")
+            conn.close(t("对方取消了加好友请求"))
             return
         if kind == "blocked":
             with self._lock:
@@ -2264,7 +2271,7 @@ class ChatService:
                     contact.updated_at = time.time()
             self._save_contacts()
             self._emit(EventKind.CONTACTS)
-            self._emit(EventKind.ERROR, f"{conn.peer_name} 已把你封禁: {message.get('reason', '')}",
+            self._emit(EventKind.ERROR, t("{0} 已把你封禁: {1}").format(conn.peer_name, message.get('reason', '')),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"notice": True, "level": "err"})
             return
@@ -2284,22 +2291,22 @@ class ChatService:
             self._emit(EventKind.CONTACTS)
             name = contact.name if contact else conn.peer_name
             self._emit(EventKind.ERROR,
-                       f"{name} 把你从好友里删除了, 已移除该联系人",
+                       t("{0} 把你从好友里删除了, 已移除该联系人").format(name),
                        peer_id=conn.peer_id, name=name,
                        data={"notice": True, "level": "warn"})
-            conn.close("对方已删除好友")
+            conn.close(t("对方已删除好友"))
             return
 
         if kind == "file-offer":
             if not conn.authenticated:
                 return
             transfer_id = str(message.get("id", ""))
-            name = str(message.get("name", "文件"))
+            name = str(message.get("name", t("文件")))
             size = int(message.get("size", 0) or 0)
             auto = self.auto_accept_files
             self._emit(EventKind.FILE_OFFER,
-                       f"{conn.peer_name} 发来文件 {name} ({human_size(size)})"
-                       + ("，已自动接收" if auto else "，等待确认"),
+                       t("{0} 发来文件 {1} ({2})").format(conn.peer_name, name, human_size(size))
+                       + (t("，已自动接收") if auto else t("，等待确认")),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"transfer_id": transfer_id, "name": name, "size": size,
                              "direction": "in", "auto_accepted": auto})
@@ -2310,7 +2317,7 @@ class ChatService:
                 return
             ok = bool(transfer.verified)
             self._emit(EventKind.FILE_DONE if ok else EventKind.FILE_FAILED,
-                       (f"文件已接收: {transfer.path}" if ok else f"文件校验失败: {transfer.path}"),
+                       (t("文件已接收: {0}").format(transfer.path) if ok else t("文件校验失败: {0}").format(transfer.path)),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"transfer_id": transfer.transfer_id, "path": transfer.path,
                              "name": transfer.name, "size": transfer.received, "verified": ok,
@@ -2318,14 +2325,14 @@ class ChatService:
             return
         if kind == "file-accept":
             if conn.start_transfer(str(message.get("id", ""))):
-                self._emit(EventKind.INFO, f"{conn.peer_name} 已同意接收, 开始发送…",
+                self._emit(EventKind.INFO, t("{0} 已同意接收, 开始发送…").format(conn.peer_name),
                            peer_id=conn.peer_id, name=conn.peer_name)
             return
         if kind == "file-reject":
             transfer_id = str(message.get("id", ""))
             conn.outgoing.pop(transfer_id, None)
             self._emit(EventKind.FILE_FAILED,
-                       f"{conn.peer_name} 拒绝接收文件: {message.get('reason', '')}",
+                       t("{0} 拒绝接收文件: {1}").format(conn.peer_name, message.get('reason', '')),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"direction": "out", "reason": str(message.get("reason", ""))})
             return
@@ -2336,7 +2343,7 @@ class ChatService:
             if pending:
                 pending.close()
             self._emit(EventKind.FILE_FAILED,
-                       f"文件传输被中止: {message.get('reason', '')}",
+                       t("文件传输被中止: {0}").format(message.get('reason', '')),
                        peer_id=conn.peer_id, name=conn.peer_name, data={"direction": "in"})
             return
 
@@ -2346,9 +2353,9 @@ class ChatService:
         if contact and contact.blocked:
             # 明确回一句"你还在我的黑名单里": 保持静默的话, 对方只会一直显示
             # "等待对方确认", 根本不知道是没上线还是被封了 (用户报过)。
-            conn.send_message({"t": "blocked", "reason": "对方仍在封禁你", "ts": time.time()})
+            conn.send_message({"t": "blocked", "reason": t("对方仍在封禁你"), "ts": time.time()})
             self._emit(EventKind.INFO,
-                       f"{conn.peer_name} 又发来加好友请求, 但他在你的黑名单里 (未转发给你)",
+                       t("{0} 又发来加好友请求, 但他在你的黑名单里 (未转发给你)").format(conn.peer_name),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"notice": True, "level": "info", "silent": True})
             return
@@ -2363,7 +2370,7 @@ class ChatService:
             ts = int(time.time())
         if not crypto.verify_request_signature(conn.card, self.peer_id, ts, note,
                                               str(message.get("sig", ""))):
-            self._emit(EventKind.ERROR, f"收到一条签名无效的好友请求 (来自 {name}), 已忽略")
+            self._emit(EventKind.ERROR, t("收到一条签名无效的好友请求 (来自 {0}), 已忽略").format(name))
             return
 
         # 先回一句"收到了": 对方靠它才知道请求真的送到了 (没有回执时它会重发,
@@ -2413,7 +2420,7 @@ class ChatService:
         self._emit(EventKind.CONTACTS)
         if is_new:
             self._emit(EventKind.INFO,
-                       f"收到 {name} 的加好友请求 (指纹 {conn.card.fingerprint})",
+                       t("收到 {0} 的加好友请求 (指纹 {1})").format(name, conn.card.fingerprint),
                        peer_id=conn.peer_id, name=name,
                        data={"request": True, "fingerprint": conn.card.fingerprint, "note": note})
 
@@ -2427,7 +2434,7 @@ class ChatService:
         contact.request_sent_at = 0.0
         self._save_contacts()
         self._emit(EventKind.INFO,
-                   f"{conn.peer_name} 已收到你的加好友请求, 正在等他处理…",
+                   t("{0} 已收到你的加好友请求, 正在等他处理…").format(conn.peer_name),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"notice": True, "level": "info", "silent": True})
 
@@ -2442,12 +2449,12 @@ class ChatService:
         with self._lock:
             self._incoming_questions[conn.peer_id] = pending
         self._emit(EventKind.INFO,
-                   f"{conn.peer_name} 的加好友验证问题: {pending['question']}",
+                   t("{0} 的加好友验证问题: {1}").format(conn.peer_name, pending['question']),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"challenge": True, "question": pending["question"],
                          "nonce": pending["nonce"], "max_attempts": pending["max_attempts"]})
         self._emit(EventKind.QUESTION,
-                   f"请回答 {conn.peer_name} 的验证问题: {pending['question']}",
+                   t("请回答 {0} 的验证问题: {1}").format(conn.peer_name, pending['question']),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"challenge": True, "question": pending["question"],
                          "nonce": pending["nonce"], "max_attempts": pending["max_attempts"]})
@@ -2481,7 +2488,7 @@ class ChatService:
             self._save_contacts()
             self._emit(EventKind.CONTACTS)
             self._emit(EventKind.INFO,
-                       f"{conn.peer_name} 通过了验证问题的校验, 已加入『新朋友』等你处理",
+                       t("{0} 通过了验证问题的校验, 已加入『新朋友』等你处理").format(conn.peer_name),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"request": True, "fingerprint": conn.card.fingerprint,
                              "verified_by_question": True})
@@ -2504,12 +2511,12 @@ class ChatService:
             with self._lock:
                 self._incoming_questions.pop(conn.peer_id, None)   # 答对了, 这题不用再答
             self._emit(EventKind.QUESTION_RESULT,
-                       f"验证问题答对了 ✓ 等待 {conn.peer_name} 处理你的加好友请求",
+                       t("验证问题答对了 ✓ 等待 {0} 处理你的加好友请求").format(conn.peer_name),
                        peer_id=conn.peer_id, name=conn.peer_name,
                        data={"ok": True, "attempts_left": left})
             return
-        text = (f"答案不对, 还剩 {left} 次机会" if left > 0
-                else "答案不对, 机会已用完 (对方已自动封禁)")
+        text = (t("答案不对, 还剩 {0} 次机会").format(left) if left > 0
+                else t("答案不对, 机会已用完 (对方已自动封禁)"))
         self._emit(EventKind.QUESTION_RESULT, text,
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"ok": False, "attempts_left": left})
@@ -2544,13 +2551,13 @@ class ChatService:
             conn.mark_authenticated()
         self._save_contacts()
         self._emit(EventKind.CONTACTS)
-        text = (f"✅ {conn.peer_name} 已解除对你的封禁, 你们仍然是好友"
+        text = (t("✅ {0} 已解除对你的封禁, 你们仍然是好友").format(conn.peer_name)
                 if restored else
-                f"{conn.peer_name} 已解除对你的封禁, 现在可以重新发送加好友请求")
+                t("{0} 已解除对你的封禁, 现在可以重新发送加好友请求").format(conn.peer_name))
         self._emit(EventKind.INFO, text, peer_id=conn.peer_id, name=conn.peer_name,
                    data={"notice": True, "level": "info"})
         if restored:
-            self._emit(EventKind.CONNECTED, f"与 {contact.name} 的加密会话已恢复",
+            self._emit(EventKind.CONNECTED, t("与 {0} 的加密会话已恢复").format(contact.name),
                        peer_id=contact.peer_id, name=contact.name)
 
     def _handle_unblock_ack(self, conn: Connection, message: Dict[str, Any]) -> None:
@@ -2561,7 +2568,7 @@ class ChatService:
             return
         contact.unblock_notice = False
         self._save_contacts()
-        self._emit(EventKind.INFO, f"✅ {conn.peer_name} 已收到『已解禁』通知",
+        self._emit(EventKind.INFO, t("✅ {0} 已收到『已解禁』通知").format(conn.peer_name),
                    peer_id=conn.peer_id, name=conn.peer_name,
                    data={"notice": True, "level": "info", "silent": True})
 
@@ -2591,7 +2598,7 @@ class ChatService:
         if already:
             return                       # 重复的同意消息: 不用再弹一次"新好友"
         self._emit(EventKind.CONNECTED,
-                   f"✅ {contact.name} 同意了你的好友请求, 现在可以加密聊天了",
+                   t("✅ {0} 同意了你的好友请求, 现在可以加密聊天了").format(contact.name),
                    peer_id=contact.peer_id, name=contact.name,
                    data={"new_friend": True, "fingerprint": conn.card.fingerprint})
 
@@ -2610,13 +2617,13 @@ class ChatService:
             contact = self._contacts.get(conn.peer_id)
         if contact is None:
             return
-        reason = str(message.get("reason", "对方拒绝"))
+        reason = str(message.get("reason", t("对方拒绝")))
         with self._lock:
             self._contacts.pop(conn.peer_id, None)
         self._save_contacts()
-        conn.close("对方拒绝了你的好友请求")
+        conn.close(t("对方拒绝了你的好友请求"))
         self._emit(EventKind.CONTACTS)
-        self._emit(EventKind.ERROR, f"{contact.name} 拒绝了你的好友请求 ({reason})",
+        self._emit(EventKind.ERROR, t("{0} 拒绝了你的好友请求 ({1})").format(contact.name, reason),
                    peer_id=contact.peer_id, name=contact.name,
                    data={"notice": True, "level": "warn"})
 
@@ -2659,10 +2666,10 @@ class ChatService:
         if previous is not None and getattr(previous, "manual", False):
             # 之前只能靠本地登记兜底, 现在广播/单播真的能找到它了 -> 换成发现层记录
             self._emit(EventKind.INFO,
-                       f"现在能自动搜索到 {peer.name} 了 (之前只是本地登记)",
+                       t("现在能自动搜索到 {0} 了 (之前只是本地登记)").format(peer.name),
                        peer_id=peer.peer_id, name=peer.name)
         self._emit(EventKind.LAN_PEERS)
-        self._emit(EventKind.PRESENCE, f"{peer.name} 出现在局域网中", peer_id=peer.peer_id,
+        self._emit(EventKind.PRESENCE, t("{0} 出现在局域网中").format(peer.name), peer_id=peer.peer_id,
                    name=peer.name)
 
     def _on_lan_peer_lost(self, peer: DiscoveredPeer) -> None:
@@ -2670,7 +2677,7 @@ class ChatService:
             self._lan_peers.pop(peer.peer_id, None)
             self._discovered_ids.discard(peer.peer_id)
         self._emit(EventKind.LAN_PEERS)
-        self._emit(EventKind.PRESENCE, f"{peer.name} 离开了局域网", peer_id=peer.peer_id,
+        self._emit(EventKind.PRESENCE, t("{0} 离开了局域网").format(peer.name), peer_id=peer.peer_id,
                    name=peer.name)
 
     def _on_lan_peer_updated(self, old: DiscoveredPeer, new: DiscoveredPeer) -> None:
@@ -2678,7 +2685,7 @@ class ChatService:
             self._lan_peers[new.peer_id] = new
             self._discovered_ids.add(new.peer_id)
         if old.name != new.name:
-            self._emit(EventKind.PRESENCE, f"{old.name} 改名为 {new.name}",
+            self._emit(EventKind.PRESENCE, t("{0} 改名为 {1}").format(old.name, new.name),
                        peer_id=new.peer_id, name=new.name)
         self._emit(EventKind.LAN_PEERS)
 
@@ -2695,9 +2702,9 @@ class ChatService:
             address = self._resolve_address(contact)
             if address is None:
                 contact.dial_state = "failed"
-                contact.last_error = "对方不在线或还没发现地址"
+                contact.last_error = t("对方不在线或还没发现地址")
                 self._emit(EventKind.STATUS)
-                self._emit(EventKind.ERROR, f"暂时联系不上 {contact.name} (对方不在线?)")
+                self._emit(EventKind.ERROR, t("暂时联系不上 {0} (对方不在线?)").format(contact.name))
                 return
             host, port = address
             contact.dial_state = "connecting"
@@ -2719,7 +2726,7 @@ class ChatService:
                     return
                 contact.next_try = time.time() + max(30.0, self.reconnect_cooldown)
                 self._emit(EventKind.STATUS)
-                self._emit(EventKind.ERROR, f"向 {contact.name} 发送好友请求失败: {exc}")
+                self._emit(EventKind.ERROR, t("向 {0} 发送好友请求失败: {1}").format(contact.name, exc))
                 _close_quietly(sock)
                 return
             self._register(contact, sock, result, host, initiated_by_us=True)
@@ -2763,7 +2770,7 @@ class ChatService:
         if current is not None and current.is_alive and current is not conn:
             current.send_message(payload)
             contact.request_sent_at = time.time()
-            self._emit(EventKind.INFO, f"补发了一次加好友请求 ({contact.name} 那边换了会话)")
+            self._emit(EventKind.INFO, t("补发了一次加好友请求 ({0} 那边换了会话)").format(contact.name))
         contact.next_try = time.time() + 2.0
         self._emit(EventKind.STATUS)
 
@@ -2850,6 +2857,9 @@ class ChatService:
             self.auto_connect_friends = bool(data.get("auto_connect_friends",
                                                       self.auto_connect_friends))
             self.rekey_every = max(0, int(data.get("rekey_every", self.rekey_every)))
+            saved_language = str(data.get("language", "") or "")
+            if saved_language:
+                self.language = i18n.normalize(saved_language)
             saved_port = int(data.get("tcp_port", 0) or 0)
             self.saved_tcp_port = saved_port if 0 < saved_port < 65536 else 0
             if saved_port and not self.tcp_port_from_cli:
@@ -2867,7 +2877,7 @@ class ChatService:
                 # 的老版本写的, 里面的路径一定是它自动算出来的 (老版本每次启动都会写进去)。
                 # 一律忽略, 用系统下载目录。用户报过两次:"明明说改了默认目录, 升级后还是老路径"
                 # —— 根因就是这里把老版本自动写的值当成了"用户设置"。
-                note = f"已忽略旧版本自动写入的接收目录: {saved_dir}"
+                note = t("已忽略旧版本自动写入的接收目录: {0}").format(saved_dir)
                 self.download_dir_warning = (f"{self.download_dir_warning}; {note}"
                                              if self.download_dir_warning else note)
             questions = data.get("questions", {})
@@ -2900,6 +2910,7 @@ class ChatService:
                            "rekey_every": self.rekey_every,
                            "tcp_port": getattr(self, "saved_tcp_port", 0),
                            "discoverable": bool(getattr(self, "discoverable", True)),
+                           "language": getattr(self, "language", i18n.SOURCE_LANGUAGE),
                            "download_dir": self.download_dir,
                            "download_dir_chosen": self.download_dir_chosen,
                            "questions": questions},
@@ -3022,18 +3033,18 @@ def split_manual_address(raw: str) -> Tuple[str, int, str]:
     """
     text = normalize_address_input(raw)
     if not text:
-        return "", 0, "地址不能为空"
+        return "", 0, t("地址不能为空")
     host, sep, port_text = text.rpartition(":")
     if not sep:
         return text, 0, ""
     if not host:
-        return "", 0, f"地址不完整: {text}"
+        return "", 0, t("地址不完整: {0}").format(text)
     try:
         port = int(port_text)
     except ValueError:
-        return "", 0, f"端口不是数字: {port_text}"
+        return "", 0, t("端口不是数字: {0}").format(port_text)
     if not (0 < port < 65536):
-        return "", 0, f"端口超出范围: {port}"
+        return "", 0, t("端口超出范围: {0}").format(port)
     return host, port, ""
 
 
@@ -3083,5 +3094,5 @@ def _prepare_dir(preferred: str) -> tuple:
         except OSError as exc:
             errors.append(f"{path}: {exc}")
             continue
-        return path, (f"首选接收目录不可用 ({errors[0]}), 已改用: {path}" if errors else "")
-    return preferred, f"找不到可写目录: {'; '.join(errors)}"
+        return path, (t("首选接收目录不可用 ({0}), 已改用: {1}").format(errors[0], path) if errors else "")
+    return preferred, t("找不到可写目录: {0}").format('; '.join(errors))

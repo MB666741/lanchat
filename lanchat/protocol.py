@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from .i18n import t
 import json
 import socket
 import threading
@@ -35,7 +36,7 @@ def send_frame(sock: socket.socket, obj: Dict[str, Any]) -> None:
     """线程安全地发送一帧。多个线程写同一 socket 时由 lock 串行化。"""
     data = encode_frame(obj)
     if len(data) > MAX_FRAME_BYTES:
-        raise ProtocolError("待发送的帧超过大小上限")
+        raise ProtocolError(t("待发送的帧超过大小上限"))
     sock.sendall(data)
 
 
@@ -59,9 +60,9 @@ class FrameReader:
                 try:
                     obj = json.loads(line.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                    raise ProtocolError(f"收到非法 JSON 帧: {exc}") from exc
+                    raise ProtocolError(t("收到非法 JSON 帧: {0}").format(exc)) from exc
                 if not isinstance(obj, dict):
-                    raise ProtocolError("帧必须是 JSON 对象")
+                    raise ProtocolError(t("帧必须是 JSON 对象"))
                 return obj
 
             with self._lock:
@@ -71,12 +72,12 @@ class FrameReader:
                 except socket.timeout:
                     raise
                 except OSError as exc:
-                    raise ConnectionClosed(f"连接读取失败: {exc}") from exc
+                    raise ConnectionClosed(t("连接读取失败: {0}").format(exc)) from exc
             if not chunk:
-                raise ConnectionClosed("对端关闭了连接")
+                raise ConnectionClosed(t("对端关闭了连接"))
             self._buf.extend(chunk)
             if len(self._buf) > MAX_FRAME_BYTES:
-                raise ProtocolError("单帧超过大小上限, 断开连接")
+                raise ProtocolError(t("单帧超过大小上限, 断开连接"))
 
 
 def read_one_frame(sock: socket.socket, timeout: Optional[float] = 10.0) -> Dict[str, Any]:
