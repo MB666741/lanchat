@@ -252,7 +252,8 @@ dist\LanChat\LanChat.exe --diagnose
 并删掉 `COLLECT`（代价是首次启动要解压 1~3 秒，个别受限环境可能被拦）。
 
 > 本机已经装过 PyInstaller 的话，也可以直接 `pyinstaller lanchat.spec --noconfirm --clean`，
-> 但用虚拟环境更容易复现问题。
+> 但用虚拟环境更容易复现问题。2.3.0 的发行包是用 **PyInstaller 6.22.3 + cryptography 50.0.1**
+> 打的，想复现同一份产物就照这两个版本装。
 
 常用命令行参数：
 

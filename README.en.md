@@ -271,7 +271,8 @@ and it may be blocked in some restricted environments).
 
 > If PyInstaller is already installed on your machine, you can also just run
 > `pyinstaller lanchat.spec --noconfirm --clean`, but a virtual environment makes problems far easier
-> to reproduce.
+> to reproduce. The 2.3.0 release package was built with **PyInstaller 6.22.3 + cryptography 50.0.1**;
+> install those exact versions to reproduce the same output.
 
 Common command-line arguments:
 

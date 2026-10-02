@@ -68,7 +68,7 @@ version is pinned, so rebuilding on another machine or months later gives the sa
 environment is clean, so a pile of unrelated libraries installed on your machine is not swept into the
 bundle (the `excludes` in `lanchat.spec` are only a fallback). To see which version you got:
 `packaging_env\Scripts\python.exe -m PyInstaller --version` (the 2.3.0 package was built with
-PyInstaller 6.x).
+**PyInstaller 6.22.3 + cryptography 50.0.1**; install those exact versions to reproduce it).
 
 **The output**: `lanchat.spec` builds a **folder build (onedir)** `dist\LanChat\` by default: it starts
 in a second, and you just double-click `LanChat.exe` inside it; when sending it to someone else, copy
