@@ -19,7 +19,7 @@ a = Analysis(
     ["chat_gui.py"],
     pathex=["."],
     binaries=[],
-    datas=[("使用说明.txt", ".")],   # 打包时一起放进 dist/LanChat (给收到文件夹的人看)
+    datas=[("使用说明.txt", "."), ("使用说明.en.txt", ".")],   # 打包时一起放进 dist/LanChat (给收到文件夹的人看)
     hiddenimports=["lanchat", "lanchat.gui", "lanchat.service", "lanchat.crypto",
                    "lanchat.connection", "lanchat.discovery", "lanchat.identity",
                    "lanchat.protocol", "lanchat.console", "lanchat.winfocus",
@@ -62,11 +62,12 @@ coll = COLLECT(exe, a.binaries, a.zipfiles, a.datas, strip=False, upx=False,
                upx_exclude=[], name="LanChat")
 
 # PyInstaller 6 会把 datas 放进 _internal/, 收到文件夹的人第一眼看不到 —— 再往 exe
-# 旁边放一份"使用说明.txt"(上面 datas 里也保留, 免得以后改回 5.x 就丢了)。
+# 旁边各放一份使用说明(上面 datas 里也保留, 免得以后改回 5.x 就丢了)。
 try:
     import shutil as _shutil
-    _shutil.copyfile(os.path.join(SPECPATH, "使用说明.txt"),
-                     os.path.join(DISTPATH, "LanChat", "使用说明.txt"))
+    for _doc in ("使用说明.txt", "使用说明.en.txt"):
+        _shutil.copyfile(os.path.join(SPECPATH, _doc),
+                         os.path.join(DISTPATH, "LanChat", _doc))
 except OSError:
     pass
 

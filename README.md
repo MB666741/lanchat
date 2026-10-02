@@ -1,3 +1,5 @@
+[English](README.en.md) | 简体中文
+
 # LanChat —— 局域网即时通讯与文件传输
 
 LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段内的设备启动后即可相互发现，
@@ -19,26 +21,19 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 
 ## 下载与安装
 
-> **版本说明**：预编译的 Windows 免安装包停留在 **2.2.0**，从 **2.3.0** 起仓库只发布源码
-> （见 [Releases](../../releases)）。本文档描述的是当前源码（2.3.0），其中的界面语言功能
-> 只有方式二才有。
-
-**方式一：使用预编译包（2.2.0，无多语言）**
-
-1. 在 [Releases](../../releases) 页面下载 `LanChat-2.2.0-windows-amd64.zip`
-   （约 13.7 MB）。
+1. 在 [Releases](../../releases) 页面下载 `LanChat-2.3.0-windows-amd64.zip`（约 14 MB）。
    > 中国用户如果下载过慢，可以使用 [GitHub 加速](https://gh-proxy.com/)。
-2. 将压缩包**完整解压**到任意目录。程序以文件夹形式分发，`LanChat.exe` 依赖同级目录下的
-   `_internal\`，请勿单独复制可执行文件。
-3. 双击 `LanChat.exe`，填写昵称后即可使用。
+2. 将压缩包**完整解压**到任意目录（包内是一层 `LanChat\` 目录），双击里面的 `LanChat.exe`。
+   程序以文件夹形式分发，`LanChat.exe` 依赖同级目录下的 `_internal\`，请勿单独复制可执行文件。
+3. 填写昵称后即可使用。
 
-**方式二：从源码运行，或自行打包（2.3.0）**
+也可以直接从源码运行，或自行打包：
 
 ```bash
 pip install -r requirements.txt        # 只有 cryptography 一个第三方依赖
 python chat_gui.py                     # 直接运行
 
-pyinstaller lanchat.spec --noconfirm --clean   # 或打包成免安装文件夹 → dist\LanChat\
+pyinstaller lanchat.spec --noconfirm --clean   # 或者打成免安装文件夹 → dist\LanChat\
 ```
 
 > 程序未进行代码签名，Windows SmartScreen 可能提示「未知发布者」；选择「仍要运行」即可。
@@ -196,8 +191,11 @@ chat_gui.py             图形界面入口
 chatgui.py              同名别名入口（不带下划线也能启动）
 tools/                  开发工具：i18n_extract.py（抽词条）、i18n_check.py（校验词条目录）
 lanchat.spec            PyInstaller 打包配置
-使用说明.txt             随发行包分发的简要说明
-docs/开发文档.md         设计原理、协议、加密细节与修复记录
+使用说明.txt             随发行包分发的简要说明（中文）
+使用说明.en.txt          随发行包分发的简要说明（英文）
+README.en.md            README 的英文版
+docs/开发文档.md         设计原理、协议、加密细节与修复记录（中文）
+docs/Development.md      同上，英文版
 ```
 
 ## 开发与构建
@@ -228,7 +226,8 @@ pyinstaller lanchat.spec --noconfirm   # 自行打包，输出到 dist\LanChat\
 | `--window-test 秒` | 只显示一个测试窗口，用于确认图形环境是否正常 |
 | `--version` | 显示版本号 |
 
-设计原理、协议格式、加密细节与历史修复记录见 [开发文档](docs/开发文档.md)。
+设计原理、协议格式、加密细节与历史修复记录见 [开发文档](docs/开发文档.md)
+（英文版：[Development notes](docs/Development.md)）。
 
 ## 许可
 

@@ -1,0 +1,75 @@
+LAN Chat (LanChat) — folder build (no installer, the other PC does not need Python)
+====================================================================================
+Chinese version / 中文版: 使用说明.txt
+
+How to use
+----------
+1. Copy the WHOLE LanChat folder to the other person (USB stick, chat app, cloud drive).
+   ! Do not copy LanChat.exe alone — the .dll files and folders next to it are required.
+2. Double-click LanChat.exe. On the first run it asks you to pick a nickname.
+3. When both sides are on the same LAN / same Wi-Fi, each of you shows up in the other's
+   "➕ Add contact" list. Select the other person, click "Send friend request", and once they
+   click "Agree" you can chat.
+   * Windows Firewall pops up on the first run: you MUST tick "Private networks" and allow it,
+     otherwise the two sides cannot find each other.
+4. If broadcast does not get through (Tailscale / WireGuard / different subnets / different
+   VLANs) nobody shows up in the list. Use "Add contact" → manual entry at the bottom:
+     * IP only (e.g. 100.64.0.7)        -> the app sends one unicast probe and learns the port;
+     * IP:port (e.g. 100.64.0.7:50606)  -> connects straight away (use this when the other
+       side is in invisible mode).
+   Typos are corrected automatically: full-width colon "：", full-width digits, stray spaces,
+   or a whole pasted string enclosed in backticks.
+5. Invisible mode (nobody can find you): ⚙ Settings → turn off "Allow others to discover me".
+   After that the other side can only add you by typing "your IP:your TCP port" manually — it is
+   a good idea to also pin "Local port" in Settings (otherwise the port changes on every restart).
+
+Interface language
+------------------
+* Three languages are built in: 简体中文 / 繁體中文 / English. On the first start the app follows
+  the Windows system language.
+* To change it: ⚙ Settings → "Language" drop-down → click "Apply". It takes effect after a
+  restart.
+* For one run only (without changing settings), pass --lang on the command line:
+      LanChat.exe --lang en             (English)
+      LanChat.exe --lang zh-Hant        (繁體中文)
+      LanChat.exe --lang zh-Hans        (简体中文)
+
+Where files and data live
+-------------------------
+* Identity key / contact list / settings:  %USERPROFILE%\.lanchat
+* Received files:                          system Downloads folder\lanchat
+Uninstall: just delete the LanChat folder. To remove every trace, delete
+%USERPROFILE%\.lanchat as well.
+
+Chat history
+------------
+* Messages are NOT written to disk: closing the app discards them (on purpose, no traces left).
+* But as long as ONE side is still running, when the other side restarts/reconnects that side
+  re-sends the missing part of the conversation — so you still see what was just said, including
+  your own messages.
+* You can send while the other side is offline: the message is kept on your machine and is
+  delivered automatically once they come back.
+* If both sides close the app, that conversation is gone for good. Switching contacts does not
+  lose anything (it is all kept while the app runs).
+
+Is it safe?
+-----------
+* Every device has one Ed25519 identity key pair; every connection negotiates fresh keys with
+  X25519, session keys are derived with HKDF, and messages are encrypted and authenticated with
+  AES-256-GCM (tamper-proof, replay-proof).
+* Session keys rotate automatically every 30 messages and the old one is discarded immediately
+  (history replay uses the current key as well).
+* File transfers rotate the key twice on their own: once when the receiver clicks "Accept"
+  (the file does not reuse the chat key) and once when the transfer finishes, retiring that round.
+* Before encryption every message is compressed and then padded to a random length, so an
+  observer cannot even guess how many characters you typed from the packet size (the cost is a
+  few hundred extra bytes per short message — irrelevant on a LAN).
+* The only real way to rule out a man-in-the-middle: compare the identity fingerprint shown in
+  ⚙ Settings with the other side over a separate channel (in person, by phone).
+
+Troubleshooting
+---------------
+Run this in a command prompt (it prints a detailed log):
+    LanChat.exe --diagnose > out.txt
+Self-test (opens two windows on the same PC to verify everything works):
+    LanChat.exe --self-test
