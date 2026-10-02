@@ -33,7 +33,7 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
 pip install -r requirements.txt        # 只有 cryptography 一个第三方依赖
 python chat_gui.py                     # 直接运行
 
-pyinstaller lanchat.spec --noconfirm --clean   # 或者打成免安装文件夹 → dist\LanChat\
+pyinstaller lanchat.spec --noconfirm --clean   # 或者打成免安装文件夹 → dist\LanChat\ (还需要安装pyinstaller)
 ```
 
 > 程序未进行代码签名，Windows SmartScreen 可能提示「未知发布者」；选择「仍要运行」即可。
