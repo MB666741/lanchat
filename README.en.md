@@ -291,7 +291,8 @@ Common command-line arguments:
 | `--window-test seconds` | Show only one test window, used to confirm whether the graphical environment is working |
 | `--version` | Show the version number |
 
-For the design rationale, protocol format, encryption details and historical fix records, see [Development notes](docs/Development.md).
+For the design rationale, protocol format, encryption details and historical fix records, see
+[Development notes](docs/Development.md) (the Chinese original: [开发文档](docs/开发文档.md)).
 
 ## License
 
