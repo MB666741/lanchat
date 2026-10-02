@@ -22,16 +22,60 @@ python chat_gui.py --self-test        # self-test mode: simulate two people chat
 python chat_gui.py --diagnose         # environment self-check only, without opening the GUI
 ```
 
-> Repackaging (PyInstaller is not in the repository; just create your own virtual environment and install it):
-> ```bash
-> python -m venv packaging_env
-> packaging_env\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
-> packaging_env\Scripts\pyinstaller.exe lanchat.spec --noconfirm --clean
-> ```
-> `lanchat.spec` builds a **folder build (onedir)** `dist\LanChat\` by default: it starts fast, and you just double-click
-> `LanChat.exe` inside it; when sending it to someone else, copy the whole folder over.
-> For the single-file build with "only one exe": replace `EXE(...)` in `lanchat.spec` with the version given in the comment
-> and delete `COLLECT` (the cost is that the first start has to unpack for 1~3 seconds, and it may be blocked in some restricted environments).
+### Dependencies: running and packaging are separate
+
+| Purpose | What you need | How to install it |
+| --- | --- | --- |
+| Running / developing | Python 3.10+, `cryptography` | `pip install -r requirements.txt` |
+| Building an exe | All of the above **plus PyInstaller** | Install it **separately**: `pip install pyinstaller` (it is **not** in `requirements.txt`) |
+
+> Why PyInstaller is not listed in `requirements.txt`: only the "turn it into an exe" step needs it,
+> and people who run from source never do; on top of that its **major releases occasionally change
+> packaging behaviour** (output layout, hooks), so installing it on its own makes the version easy to pin.
+
+### Repackaging (PyInstaller, best installed in a dedicated virtual environment)
+
+**① Create the build environment** (it serves packaging only; delete and recreate it whenever it
+misbehaves — `packaging_env\` is already in `.gitignore` and never enters the repository)
+
+```bat
+python -m venv packaging_env
+```
+
+**② Install the dependencies** (the runtime dependency and PyInstaller, both into this environment)
+
+```bat
+packaging_env\Scripts\python.exe -m pip install --upgrade pip
+packaging_env\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+```
+
+**③ Build** (`--clean` removes the intermediate output left in `build\` by the previous run, so no
+stale files can make the result inconsistent)
+
+```bat
+packaging_env\Scripts\pyinstaller.exe lanchat.spec --noconfirm --clean
+```
+
+**④ Verify the output** (`--diagnose` runs the self-check only and does not open the UI; a windowed
+program has no console, so append `> out.txt` if you want to keep the output)
+
+```bat
+dist\LanChat\LanChat.exe --diagnose
+```
+
+**Why a virtual environment is recommended**: ① it keeps your system Python clean; ② the PyInstaller
+version is pinned, so rebuilding on another machine or months later gives the same result; ③ the build
+environment is clean, so a pile of unrelated libraries installed on your machine is not swept into the
+bundle (the `excludes` in `lanchat.spec` are only a fallback). To see which version you got:
+`packaging_env\Scripts\python.exe -m PyInstaller --version` (the 2.3.0 package was built with
+PyInstaller 6.x).
+
+**The output**: `lanchat.spec` builds a **folder build (onedir)** `dist\LanChat\` by default: it starts
+in a second, and you just double-click `LanChat.exe` inside it; when sending it to someone else, copy
+the **whole folder** (not just the exe — its dependencies live in the sibling `_internal\` folder).
+For the single-file build with "only one exe": swap in the `EXE(...)` block given in the comment in
+`lanchat.spec` and delete `COLLECT` (the cost is that the first start has to unpack for 1~3 seconds,
+and it may be blocked in some restricted environments).
 
 
 ---

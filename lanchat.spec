@@ -3,8 +3,10 @@
 
 **文件夹版**打包 (onedir): 产出 dist/LanChat/ 整个目录, 双击里面的 LanChat.exe 即可,
 启动是秒开的。发给别人时要把**整个文件夹**一起拷过去 (不能只拷 exe), 对方不需要装 Python。
-构建 (用 packaging_env 里的 PyInstaller):
-    packaging_env\\Scripts\\pyinstaller.exe lanchat.spec --noconfirm
+构建 (先在独立虚拟环境里装好运行依赖 + PyInstaller, 完整步骤见 README「开发与构建」/ docs/开发文档.md 文首):
+    python -m venv packaging_env
+    packaging_env\\Scripts\\python.exe -m pip install -r requirements.txt pyinstaller
+    packaging_env\\Scripts\\pyinstaller.exe lanchat.spec --noconfirm --clean
 
 说明:
   * console=False -> 不弹黑框; 想看 --diagnose 的输出可以用 `LanChat.exe --diagnose > out.txt`

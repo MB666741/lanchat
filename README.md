@@ -27,14 +27,19 @@ LanChat 是一款面向局域网（LAN）的点对点通信工具。同一网段
    程序以文件夹形式分发，`LanChat.exe` 依赖同级目录下的 `_internal\`，请勿单独复制可执行文件。
 3. 填写昵称后即可使用。
 
-也可以直接从源码运行，或自行打包：
+也可以直接从源码运行，或自行打包。注意依赖是**两件事**：
+
+| 用途 | 需要装什么 | 怎么装 |
+| --- | --- | --- |
+| 从源码运行 | Python 3.10 或更高版本、`cryptography` | `pip install -r requirements.txt` |
+| 打包成 exe | 上面这些**再加上 PyInstaller** | 要**单独装**：`pip install pyinstaller`（`requirements.txt` 里故意不含它） |
 
 ```bash
-pip install -r requirements.txt        # 只有 cryptography 一个第三方依赖
+pip install -r requirements.txt        # 运行依赖：只有 cryptography
 python chat_gui.py                     # 直接运行
-
-pyinstaller lanchat.spec --noconfirm --clean   # 或者打成免安装文件夹 → dist\LanChat\ (还需要安装pyinstaller)
 ```
+
+打包建议装在独立虚拟环境里做，完整步骤（含验证）见下面的 [开发与构建](#开发与构建)。
 
 > 程序未进行代码签名，Windows SmartScreen 可能提示「未知发布者」；选择「仍要运行」即可。
 > 身份密钥与配置保存在数据目录 `%USERPROFILE%\.lanchat`。
@@ -200,14 +205,54 @@ docs/Development.md      同上，英文版
 
 ## 开发与构建
 
+**依赖分两部分**：运行/开发只需要 `cryptography`；**打包成 exe 还需要 PyInstaller，而它不在
+`requirements.txt` 里，必须单独安装**（平时跑源码的人用不到它，所以没混在一起）。
+
 ```bash
-pip install -r requirements.txt        # 唯一的第三方依赖是 cryptography
+pip install -r requirements.txt        # 运行依赖：唯一的第三方库是 cryptography
 python chat_gui.py                     # 启动图形界面
 python chatgui.py                      # 同上（省略下划线的别名入口）
 python chat_gui.py --self-test         # 单机模拟双端，验证完整流程
 python chat_gui.py --diagnose          # 仅执行环境自检，不打开界面
-pyinstaller lanchat.spec --noconfirm   # 自行打包，输出到 dist\LanChat\ (如要打包还需要pyinstaller)
 ```
+
+### 打包步骤（Windows，按顺序执行）
+
+建议把 PyInstaller 装在一个**专用虚拟环境**里再打包：不污染系统 Python，能把 PyInstaller
+版本固定住（它的大版本更新偶尔会改变打包行为），也不会把本机装的一堆无关库顺手收进包里。
+
+**① 建打包环境**（只服务打包，随时可以删掉重来；`packaging_env\` 已在 `.gitignore` 里，不会进仓库）
+
+```bat
+python -m venv packaging_env
+```
+
+**② 装依赖**（运行依赖 + PyInstaller 都装进这个环境）
+
+```bat
+packaging_env\Scripts\python.exe -m pip install --upgrade pip
+packaging_env\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+```
+
+**③ 打包**（`--clean` 会清掉上次 `build\` 里的中间产物，避免残留造成结果不一致）
+
+```bat
+packaging_env\Scripts\pyinstaller.exe lanchat.spec --noconfirm --clean
+```
+
+**④ 验证产物**（`--diagnose` 只做环境自检，不开界面；窗口程序看不到控制台输出，可加 `> out.txt`）
+
+```bat
+dist\LanChat\LanChat.exe --diagnose
+```
+
+产物在 **`dist\LanChat\`**，是**文件夹版（onedir）**：双击里面的 `LanChat.exe` 即用，启动是
+秒开的；**发给别人要把整个文件夹一起拷**（不能只拷 exe，依赖都在同级 `_internal\` 里）。
+想要"只有一个 exe"的单文件版，把 `lanchat.spec` 末尾注释里给的那段 `EXE(...)` 换上去、
+并删掉 `COLLECT`（代价是首次启动要解压 1~3 秒，个别受限环境可能被拦）。
+
+> 本机已经装过 PyInstaller 的话，也可以直接 `pyinstaller lanchat.spec --noconfirm --clean`，
+> 但用虚拟环境更容易复现问题。
 
 常用命令行参数：
 

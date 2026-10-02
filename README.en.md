@@ -30,14 +30,21 @@ program can also be run directly from source.
    The program is distributed as a folder: `LanChat.exe` depends on the `_internal\` folder next to it, so do not copy the executable on its own.
 3. Enter a nickname and the program is ready to use.
 
-You can also run it directly from source, or build it yourself:
+You can also run it directly from source, or build it yourself. Note that the dependencies are
+**two separate things**:
+
+| Purpose | What you need | How to install it |
+| --- | --- | --- |
+| Running from source | Python 3.10 or later, `cryptography` | `pip install -r requirements.txt` |
+| Building an exe | All of the above **plus PyInstaller** | Install it **separately**: `pip install pyinstaller` (it is deliberately *not* in `requirements.txt`) |
 
 ```bash
-pip install -r requirements.txt        # cryptography is the only third-party dependency
+pip install -r requirements.txt        # runtime dependency: cryptography only
 python chat_gui.py                     # run it directly
-
-pyinstaller lanchat.spec --noconfirm --clean   # or build a portable folder → dist\LanChat\
 ```
+
+Packaging is best done inside a dedicated virtual environment; the complete steps (including how to
+verify the build) are in [Development and build](#development-and-build) below.
 
 > The program is not code-signed, so Windows SmartScreen may warn about an "unknown publisher"; choose "Run anyway".
 > The identity key and configuration are stored in the data folder `%USERPROFILE%\.lanchat`.
@@ -208,14 +215,63 @@ docs/Development.md     The same, in English
 
 ## Development and build
 
+**The dependencies come in two parts**: running and developing need only `cryptography`; **building an
+exe additionally needs PyInstaller, which is not in `requirements.txt` and must be installed
+separately** (people who only run from source never need it, so it is kept out of that file).
+
 ```bash
-pip install -r requirements.txt        # the only third-party dependency is cryptography
+pip install -r requirements.txt        # runtime dependency: the only third-party library is cryptography
 python chat_gui.py                     # start the graphical interface
 python chatgui.py                      # same as above (alias entry without the underscore)
 python chat_gui.py --self-test         # simulate both ends on one machine and verify the whole flow
 python chat_gui.py --diagnose          # run the environment self-check only, without opening the UI
-pyinstaller lanchat.spec --noconfirm --clean   # build it yourself, output goes to dist\LanChat\
 ```
+
+### Build steps (Windows, run them in this order)
+
+Install PyInstaller in a **dedicated virtual environment** before building: this keeps your system
+Python clean, pins the PyInstaller version (its major releases occasionally change packaging
+behaviour), and prevents unrelated libraries installed on your machine from being pulled into the
+bundle.
+
+**① Create the build environment** (used only for packaging; you can delete and recreate it at any
+time — `packaging_env\` is in `.gitignore` and never enters the repository)
+
+```bat
+python -m venv packaging_env
+```
+
+**② Install the dependencies** (both the runtime dependency and PyInstaller go into this environment)
+
+```bat
+packaging_env\Scripts\python.exe -m pip install --upgrade pip
+packaging_env\Scripts\python.exe -m pip install -r requirements.txt pyinstaller
+```
+
+**③ Build** (`--clean` removes the intermediate output left in `build\` by the previous run, so no
+stale files can make the result inconsistent)
+
+```bat
+packaging_env\Scripts\pyinstaller.exe lanchat.spec --noconfirm --clean
+```
+
+**④ Verify the output** (`--diagnose` only runs the environment self-check and does not open the UI;
+a windowed program shows no console output, so append `> out.txt` if you want to capture it)
+
+```bat
+dist\LanChat\LanChat.exe --diagnose
+```
+
+The result is in **`dist\LanChat\`** and it is a **folder build (onedir)**: double-click `LanChat.exe`
+inside it and it starts in a second. **When sending it to someone else, copy the whole folder**
+(do not copy the exe on its own — its dependencies live in the sibling `_internal\` folder). For the
+single-file build with "only one exe", swap in the `EXE(...)` block given in the comment at the end of
+`lanchat.spec` and delete `COLLECT` (the cost is that the first start has to unpack for 1~3 seconds,
+and it may be blocked in some restricted environments).
+
+> If PyInstaller is already installed on your machine, you can also just run
+> `pyinstaller lanchat.spec --noconfirm --clean`, but a virtual environment makes problems far easier
+> to reproduce.
 
 Common command-line arguments:
 
