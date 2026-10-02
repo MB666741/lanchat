@@ -206,7 +206,7 @@ python chat_gui.py                     # 启动图形界面
 python chatgui.py                      # 同上（省略下划线的别名入口）
 python chat_gui.py --self-test         # 单机模拟双端，验证完整流程
 python chat_gui.py --diagnose          # 仅执行环境自检，不打开界面
-pyinstaller lanchat.spec --noconfirm   # 自行打包，输出到 dist\LanChat\
+pyinstaller lanchat.spec --noconfirm   # 自行打包，输出到 dist\LanChat\ (如要打包还需要pyinstaller)
 ```
 
 常用命令行参数：
