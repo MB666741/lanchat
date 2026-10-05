@@ -279,7 +279,7 @@ Common command-line arguments:
 | Argument | Description |
 | --- | --- |
 | `--name` / `-n` | Nickname; if left empty, a prompt asks for it at startup |
-| `--port` | Local TCP port, 0 means automatic assignment (default) |
+| `--port` | Local TCP port; 0 means pick a free port at random from 1024~65535 on each start (default) |
 | `--discovery-port` | UDP auto-discovery port, default 50505 |
 | `--data-dir` | Folder for identity and friend data |
 | `--download-dir` | Download folder for received files |

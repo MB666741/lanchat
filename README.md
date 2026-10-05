@@ -260,7 +260,7 @@ dist\LanChat\LanChat.exe --diagnose
 | 参数 | 说明 |
 | --- | --- |
 | `--name` / `-n` | 昵称，不填写则启动时弹窗询问 |
-| `--port` | 本机 TCP 端口，0 表示自动分配（默认） |
+| `--port` | 本机 TCP 端口，0 表示每次启动在 1024~65535 里随机挑一个空闲端口（默认） |
 | `--discovery-port` | UDP 自动发现端口，默认 50505 |
 | `--data-dir` | 身份与好友数据的保存目录 |
 | `--download-dir` | 接收文件的保存目录 |

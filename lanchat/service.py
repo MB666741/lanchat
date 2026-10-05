@@ -51,6 +51,8 @@ from .constants import (
     PROTOCOL_VERSION,
     PROBE_ATTEMPTS,
     PROBE_TIMEOUT,
+    RANDOM_TCP_PORT_RANGE,
+    RANDOM_TCP_PORT_TRIES,
     RECONNECT_DELAYS,
     REKEY_EVERY_MESSAGES,
     REQUEST_ACK_TIMEOUT,
@@ -305,8 +307,7 @@ class ChatService:
 
         startup_log.step(t("服务: 绑定 TCP 监听…"))
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._listener.bind(("", self.tcp_port))
+        self._bind_listener()
         self._listener.listen(32)
         self._listener.settimeout(0.5)
         self.tcp_port = self._listener.getsockname()[1]
@@ -349,6 +350,38 @@ class ChatService:
         self._emit(EventKind.CONTACTS)
         self._emit(EventKind.LAN_PEERS)
         startup_log.step(t("服务: 启动完成"))
+
+    def _bind_listener(self) -> None:
+        """绑定 TCP 监听端口。
+
+        `tcp_port` 为 0 (默认) 时**自己在宽范围里随机挑一个空闲端口**, 不再用 `bind(("", 0))`。
+        系统分配有两个问题: ① 只在"动态端口范围"里挑, 这段既窄又能被人改小 (Windows 默认
+        49152~65535 共 16384 个; 本机 `netsh int ipv4 show dynamicport tcp` 实测是起始 1024、
+        只有 13977 个); ② 它是**顺序分配**的 —— 本机连开 30 次拿到 12994、12995、12996… 连号,
+        等于把下一个端口白送给别人。这里改成在 RANDOM_TCP_PORT_RANGE (1024~65535, 64512 个)
+        里随机试若干次, 谁先绑上算谁的; 全试不中 (Hyper-V 保留段 / 杀软拦截) 才交回系统兜底,
+        绝不因为挑端口失败就起不来。
+
+        ★ 随机试绑的时候**不能带 SO_REUSEADDR**: Windows 的语义是"允许绑到别人正在用的端口"
+        (与 Linux 相反), 带着它每次试绑都会"成功", 根本试不出冲突。固定端口的老路子保持原样
+        (带 SO_REUSEADDR, 重启后能立刻绑回同一个端口)。
+        """
+        if self.tcp_port:
+            self._listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._listener.bind(("", self.tcp_port))
+            return
+        for _ in range(RANDOM_TCP_PORT_TRIES):
+            candidate = random.randrange(*RANDOM_TCP_PORT_RANGE)
+            try:
+                self._listener.bind(("", candidate))
+            except OSError:
+                # 这个端口被占了 (或落在系统保留段里): 换一个继续试。socket 重开一个,
+                # 免得个别平台上"失败的 bind"把 socket 留在说不清的状态。
+                self._listener.close()
+                self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                continue
+            return
+        self._listener.bind(("", 0))
 
     def stop(self) -> None:
         if not self._started:

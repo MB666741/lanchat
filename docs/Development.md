@@ -262,7 +262,13 @@ the question-setting side computes the same proof with the stored K and compares
 
 * On receiving someone else's beacon it is registered as "online"; after 12 seconds with no message it is marked offline; a rename is rebroadcast immediately.
 * Because **broadcast does not cross subnets**, "can see it" means "on the same LAN", with no need to enter an IP by hand.
-* The TCP port used for chatting is assigned randomly by the system (the beacon carries the real port), avoiding port conflicts.
+* The TCP port used for chatting is **picked by the program itself at random from 1024~65535** rather
+  than being left to the system's `bind(0)`: the system's "dynamic port range" is both narrow and
+  configurable downwards (49152~65535 on Windows by default, 16384 ports; on this machine
+  `netsh int ipv4 show dynamicport tcp` reports a start of 1024 with only 13977 ports), and it is
+  allocated **sequentially** — 30 attempts in a row returned 12994, 12995, 12996…, handing the next
+  port to anyone who looks. The real port is announced to the other side with the beacon, so nothing
+  needs to be pinned and there are no conflicts.
 
 **Which networks support auto discovery** (the key is whether that network carries layer-2 broadcast):
 
@@ -663,7 +669,8 @@ the temporary directory, and says so in the startup log.
 --window-test sec         Only one test window is shown, closing automatically after N seconds
 --diagnose               Only the environment self-check (dependencies / folders / ports / local addresses / whether a window can be created), without opening the UI
 --discovery-port PORT    UDP discovery port (default 50505; everyone in the same group must use the same one)
---port PORT              Local TCP port (default 0 = assigned automatically; **in manual mode, when the other side has to enter you by hand,
+--port PORT              Local TCP port (default 0 = pick a free port at random from 1024~65535 on each
+                         start; **in manual mode, when the other side has to enter you by hand,
                          pin a port here**, for example --port 50606)
 --download-dir DIR      Download folder for received files
 --data-dir DIR          Folder for identity/friend data
@@ -786,6 +793,8 @@ Real pitfalls hit during development, recorded in the order they were found (sym
 | 71 | Self-test mode could only verify the "always online" flow, and the **disconnect → reconnect → replay** path, which is the most likely to go wrong, could not be verified by hand | Reproducing it required manually killing the process or unplugging the network cable, and the two instances of `--self-test` live in the same process, so the user cannot "make one of them disappear first" | The self-test window gained a **"🧪 Disconnect for 6 seconds"** button (`ChatService.simulate_offline`): it really drops all sessions, stops the discovery layer (sending bye, so the other side need not wait 12 seconds for the timeout) and closes the TCP listener; after 6 seconds it listens again on the **original port** and resumes broadcast; the other side's auto-reconnect brings it back. New regression: `test_simulate_offline_and_reconnect`: a message sent during the disconnect is recorded locally first (`pending`) → after coming back online it is still bound to the original port → both sides reconnect automatically → that message is delivered as a "new message" (unread +1) → normal chat still works afterwards |
 
 | 72 | **Both sides have each other's conversation open, yet unread hints keep popping up** (the "(1)" just sits there and only disappears after another click) | Unread is incremented in the **service layer** (`contact.unread += 1`), while the UI calls `mark_read` only once, when a contact is opened/switched; while a conversation stays open, new messages are merely appended to the chat area and nobody ever clears the unread count — so it goes up by one for every incoming message, even though the message is already displayed right there | When the UI opens a conversation it tells the service who is currently open (new `set_active_peer`): messages received by **the person currently being viewed** no longer accumulate unread, and opening the conversation also resets the previous unread count to zero; it is cleared when switching away, closing the window, or when that person disappears from the list, and afterwards new messages count as unread as before. **Replayed/delivered offline messages** from the other side follow the same rules. New regression: integration test group 12 (no conversation open → unread +1; open it → reset to zero; a message while it is open → stays 0; switch away → +1; open again → back to zero) + a GUI smoke assertion (opening a conversation really tells the service about the current session, and switching away clears it) |
+
+| 73 | **The port was "random" but only drawn from the system's dynamic port band** (49152~65535 on Windows, 16384 ports in total), which every program on the machine crowds into | The listening port used `bind(("", 0))` and left the choice to the system — the system only takes from its "dynamic port range", a fixed and narrow band, so ports easily cluster once several instances, or several programs on the machine, run together | Changed to **random trial binding across 1024~65535 (64512 ports)** (`_bind_listener`): the first candidate that binds is used, a failure moves on to another one (at most `RANDOM_TCP_PORT_TRIES = 12` attempts), and only when all of them fail does it fall back to the system. ★ The trial binds **must not set `SO_REUSEADDR`** — on Windows its meaning is "allow binding to a port someone else is already using" (the opposite of Linux), so with it every trial would "succeed" and a conflict could never be detected; the pinned-port path is unchanged. Measured with 30 instances started back to back: ports from **3338 to 63442**, all distinct, and only **20%** fell inside the old 49152~65535 band (it was 100% before). The system side was checked as well: on this machine `netsh int ipv4 show dynamicport tcp` reports a start of 1024 with 13977 ports, and `bind(0)` allocates **sequentially** (30 attempts returned the consecutive run 12994~13023), so the old approach was both narrow and perfectly predictable |
 
 **Lessons learned** (now written into the code comments and tests):
 
